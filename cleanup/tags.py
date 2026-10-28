@@ -20,7 +20,7 @@ except ImportError as e:  # pragma: no cover
 EasyMP4Tags.RegisterFreeformKey("artists", "ARTISTS")
 
 FIELDS = ("title", "artist", "artists", "album", "albumartist", "date")
-EXTRA = ("tracknumber", "discnumber", "tracktotal", "disctotal", "totaldiscs", "originaldate")
+EXTRA = ("tracknumber", "discnumber", "tracktotal", "disctotal", "totaldiscs", "originaldate", "musicbrainz_albumid")
 # Written by the MusicBrainz service, named as Picard names them in Vorbis comments.
 MB_FIELDS = ("musicbrainz_albumid", "musicbrainz_releasegroupid", "musicbrainz_releasetrackid", "musicbrainz_trackid",
              "musicbrainz_artistid", "musicbrainz_albumartistid", "label", "catalognumber", "barcode",

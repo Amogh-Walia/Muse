@@ -83,7 +83,31 @@ def build(root):
             "track": _num(t["tracknumber"]),
             "disc": _num(t["discnumber"]),
             "discs": _total(t["discnumber"]) or _num(t["disctotal"]) or _num(t["totaldiscs"]),
+            "release": (_first(t["musicbrainz_albumid"]) or "").lower() or None,
         })
+
+    # Songs on one MusicBrainz release are one album, whatever their album tags say: a store's "Parvana EP"
+    # and MusicBrainz's "Parvana" would otherwise become two folders. They take the name, album artist and
+    # year of the bigger album they're spread over (counting its songs without MusicBrainz ids too).
+    by_release = collections.defaultdict(list)
+    for t in tracks:
+        if t["release"]:
+            by_release[t["release"]].append(t)
+    album_size = collections.Counter((t["folder"], t["album"]) for t in tracks)
+    for members in by_release.values():
+        parts = {(t["folder"], t["album"]) for t in members}
+        if len(parts) < 2:
+            continue
+        name = max(parts, key=lambda part: (album_size[part], part[1] or ""))[1]
+        artists = collections.Counter(t["albumartist"] for t in members if t["albumartist"])
+        years = [t["year"] for t in members if t["year"]]
+        for t in members:
+            if name:
+                t["album"] = name
+            if artists:
+                t["albumartist"] = artists.most_common(1)[0][0]
+            if years:
+                t["year"] = min(years)
 
     case = _canonical_case([t["main"] for t in tracks] + [t["albumartist"] for t in tracks])
 

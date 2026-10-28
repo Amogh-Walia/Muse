@@ -303,8 +303,9 @@ def apply(db_path, track_ids, progress=_no_progress):
             values = match.tag_values(summary, track)
             if summary["artist"]:
                 values["albumartist"] = [album_artist(summary)]
-            if target["joins"] and target["joins_how"] == "the same album name":
-                # an album already in the library (not linked to this release): file alongside it under its name
+            if target["joins"]:
+                # an album already in the library: file alongside it under its own name, artist and dates, even
+                # when it's the same release (its tags may say "Parvana EP" where MusicBrainz says "Parvana")
                 existing = merge.album_values(root, by_folder[target["joins"]])
                 for field in ("album", "albumartist", "date", "originaldate"):
                     if existing[field]:

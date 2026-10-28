@@ -24,6 +24,7 @@ Processed flags are recomputed after every scan, cleanup, undo and MusicBrainz a
 - **Albums:** the same, plus format junk (`[FLAC]`, `{24-96}`, `[24B-44.1kHz]`), leading `2013 - ` / `[2014] `, ` - Single`, and ` - EP` becomes ` EP`.
 - **Everywhere:** curly quotes and Unicode dashes become ASCII, whitespace is tidied, and dates like `2014-00-00` become `2014`.
 - **Files:** `Album Artist/Year - Album/NN - Title.ext` (`D-NN` for multi-disc), built from the cleaned tags. Lyrics (`.lrc`), covers, logs and cue sheets move with their album.
+- **One release, one album:** songs carrying the same MusicBrainz release id always get one album name, album artist and year, so they share a folder, even when their album tags differ (a store's "Parvana EP" next to MusicBrainz's "Parvana"). They take those of the bigger album they're spread over, counting its songs without MusicBrainz ids too.
 
 Keeping the catalog and files in step:
 - Each tag write or move is immediately mirrored in the DB and committed: the row is re-read from the file at its new path.
@@ -137,7 +138,7 @@ Some "albums" are really playlists, such as Apple Music's *… Essentials* or *R
 
   The best one is chosen. A dropdown offers the others (one edition per release group) and "Leave this song as it is".
 - **Clashes are flagged before anything changes:**
-  - **Joining an album you have:** the song files under that album's own name, album artist and dates, so it lands in the same folder.
+  - **Joining an album you have:** the song files under that album's own name, album artist and dates, so it lands in the same folder. That holds when it's the very same release too, whose name in your files may differ from MusicBrainz's ("Parvana EP" / "Parvana").
   - **You already have the song** in that album: it's flagged. It's still remade, but it can't move onto the existing file, so it waits for Clean up, which shows both copies to compare and keeps one.
   - **Two songs remade into the same album under the same title**, for example the same song in two playlists: flagged the same way.
   - **Artist spelling:** an artist already in the library keeps its spelling. It's matched by MusicBrainz artist id, else by name, so a release crediting "Vishal & Shekhar" doesn't open a second folder next to `Vishal-Shekhar`. For joint credits, the main (first) artist is used.
