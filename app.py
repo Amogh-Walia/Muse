@@ -225,6 +225,7 @@ class Handler(BaseHTTPRequestHandler):
                      "/api/lyrics/orphans": self.lyrics_orphans, "/api/merge/apply": self.merge_apply,
                      "/api/art/set": self.art_set, "/api/artists/picture/find": self.artist_picture_find,
                      "/api/artists/picture/set": self.artist_picture_set, "/api/singles": self.make_singles, "/api/remake/lookup": self.remake_lookup, "/api/remake/apply": self.remake_apply,
+                     "/api/degrease/lookup": self.degrease_lookup, "/api/degrease/apply": self.degrease_apply,
                      "/api/transfer/import": self.transfer_import, "/api/transfer/export": self.transfer_export,
                      }.get(self.path)
             if route is None:
@@ -440,18 +441,34 @@ class Handler(BaseHTTPRequestHandler):
         from musicbrainz import remake
         return remake.state(conn, crud.get_root(conn))
 
-    def remake_lookup(self, body):
+    def api_degrease(self, conn, q):
         from musicbrainz import remake
-        return run_stoppable("remake", "songs", "Finding the songs…", self.path, body, lambda progress, finished: remake.lookup(
-            self.db_path, body.get("keys") or [], refresh=bool(body.get("refresh")), skip={int(t) for t in body.get("skip") or []},
-            finished=finished, progress=progress))
+        return remake.state(conn, crud.get_root(conn), mode="degrease")
 
-    def remake_apply(self, body):
+    def _song_lookup(self, body, mode):
         from musicbrainz import remake
-        progress = report_progress("remake")
-        result = remake.apply(self.db_path, [int(t) for t in body.get("track_ids") or []], progress=progress)
+        return run_stoppable(mode, "songs", "Finding the songs…", self.path, body, lambda progress, finished: remake.lookup(
+            self.db_path, body.get("keys") or [], refresh=bool(body.get("refresh")), skip={int(t) for t in body.get("skip") or []},
+            finished=finished, progress=progress, mode=mode))
+
+    def _song_apply(self, body, mode):
+        from musicbrainz import remake
+        progress = report_progress(mode)
+        result = remake.apply(self.db_path, [int(t) for t in body.get("track_ids") or []], progress=progress, mode=mode)
         self.refresh_status(progress)
         return result
+
+    def remake_lookup(self, body):
+        return self._song_lookup(body, "remake")
+
+    def remake_apply(self, body):
+        return self._song_apply(body, "remake")
+
+    def degrease_lookup(self, body):
+        return self._song_lookup(body, "degrease")
+
+    def degrease_apply(self, body):
+        return self._song_apply(body, "degrease")
 
     # --- import & export ----------------------------------------------------------
 

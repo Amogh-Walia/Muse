@@ -16,6 +16,11 @@ A song can also become a single of its own (cleanup/singles.py): the default for
 have, and a choice for every song. A song whose best release is itself a single gets that release's tags, which
 say so.
 
+The Bollywood degreaser (mode "degrease") runs the same lookup on a different set of songs: those whose title
+or file name says what album they're from ('Song (From "Film")'), wherever they are. Each goes to that film's
+album when MusicBrainz has it, or else just has the "(From …)" taken out of its title ("tidy"), which Clean up's
+renaming then takes out of the file name. Either way it stops showing up.
+
 Applying writes the release's tags (an album already in the library lends its own album name, album
 artist and dates, so the song files alongside it), takes out the songs' artwork (the playlist's cover, not
 their album's: without art they show up in Album art to get the real one), moves the songs into place like
@@ -58,6 +63,35 @@ def _norm_title(name):
     return rules.clean_title(name or "")[0].lower()
 
 
+def from_hint(song):
+    """The album a song's title (or else its file name) says it's from: 'Song (From "Film")'."""
+    return rules.from_album(song["title"] or "")[1] or rules.from_album(os.path.splitext(song["filename"] or "")[0])[1]
+
+
+def _names(o, hint):
+    """Whether release option `o` is the album `hint` names."""
+    return bool(hint) and match.similarity(_norm_album(o["title"]), _norm_album(hint)) >= 0.85
+
+
+def degrease_albums(conn, groups=None):
+    """Albums holding songs whose title or file name says what album they're from. All come pre-selected, and
+    (like playlists) they aren't albums for other songs to join."""
+    groups = groups or crud.tracks.by_album(conn)
+    out = []
+    for (folder, _), songs in groups.items():
+        named = [s["id"] for s in songs if from_hint(s)]
+        if named:
+            album = songs[0]["album"] or ""
+            out.append({"key": album_key(folder, album), "folder": folder, "album": album, "songs": len(songs), "playlist": True,
+                        "reason": "1 of its songs says what it's from" if len(named) == 1 else f"{len(named)} of its songs say what they're from",
+                        "only": named})
+    return sorted(out, key=lambda a: a["folder"].lower())
+
+
+def albums_for(conn, mode, groups=None):
+    return degrease_albums(conn, groups) if mode == "degrease" else candidates(conn, groups)
+
+
 def candidates(conn, groups=None):
     """Albums that can be remade: anything filed as "Various Artists" that isn't linked to MusicBrainz, and
     anything that looks like a playlist. Playlists come pre-selected."""
@@ -92,7 +126,8 @@ def _release_options(releases, recording_id):
 
 
 def _options_for(song, isrc):
-    """Every release the song's recording is on, and how it was found."""
+    """Every release the song's recording is on, and how it was found. With no ISRC match, the title search
+    includes the album the song says it's from."""
     if isrc:
         options = []
         for rec in client.recordings_by_isrc(isrc)[:MAX_RECORDINGS]:
@@ -102,6 +137,7 @@ def _options_for(song, isrc):
     # No ISRC, or MusicBrainz doesn't know it: search by title and artist (and the album the title says it's
     # from, if it says), and check the length.
     title, from_album = rules.from_album(rules.clean_title(song["title"] or "")[0])
+    from_album = from_album or from_hint(song)
     options = []
     found = client.search_recordings(title, song["artist"], release=from_album) if from_album else []
     for rec in found or client.search_recordings(title, song["artist"]):
@@ -113,11 +149,14 @@ def _options_for(song, isrc):
     return options, "title, artist and length"
 
 
-def lookup(db_path, keys, refresh=False, skip=(), finished=None, progress=_no_progress):
+def lookup(db_path, keys, refresh=False, skip=(), finished=None, progress=_no_progress, mode="remake"):
     """Look up every song of the albums `keys` (stored as it goes; stoppable). Songs already looked up are
-    skipped unless `refresh`."""
+    skipped unless `refresh`. Degreasing looks up only the songs that say where they're from."""
     conn = crud.connect(db_path)
     groups = crud.tracks.by_album(conn)
+    only = None
+    if mode == "degrease":
+        only = {t for a in degrease_albums(conn, groups) for t in a["only"]}
     wanted = set()
     for k in keys:
         folder, sep, album = k.partition("\x00")
@@ -126,7 +165,8 @@ def lookup(db_path, keys, refresh=False, skip=(), finished=None, progress=_no_pr
         wanted.add((folder, album.lower()))
     codes = crud.tracks.tag_lookup(conn, ("isrc", "tsrc"))
     known = crud.remake.songs(conn)
-    todo = [s for g in wanted for s in groups.get(g, []) if (refresh or s["id"] not in known) and s["id"] not in skip]
+    todo = [s for g in wanted for s in groups.get(g, []) if (refresh or s["id"] not in known) and s["id"] not in skip
+            and (only is None or s["id"] in only)]
     counts = collections.Counter()
     try:
         for i, song in enumerate(todo):
@@ -155,13 +195,13 @@ def _option_label(o):
     return f"{o['title']} ({o['date'][:4] or 'no date'}, {kind.lower()})"
 
 
-def state(conn, root=None):
-    """The albums that can be remade and, for songs looked up, their options, the chosen release, and what
-    choosing it means: joining an album already in the library, a duplicate there, or two songs remade
+def state(conn, root=None, mode="remake"):
+    """The albums that can be remade (or degreased) and, for songs looked up, their options, the chosen release,
+    and what choosing it means: joining an album already in the library, a duplicate there, or two songs remade
     into the same place."""
     groups = crud.tracks.by_album(conn)
     looked = crud.remake.songs(conn)
-    albums = candidates(conn, groups)
+    albums = albums_for(conn, mode, groups)
     sources = {a["folder"] for a in albums if a["playlist"]}  # playlists aren't albums to join; real ones listed here are
     by_folder = collections.defaultdict(list)
     for (folder, _), songs in groups.items():
@@ -185,8 +225,7 @@ def state(conn, root=None):
 
     def rank(o, from_album=None):
         library_release = in_library.get(o["group"], (None, None))[1]
-        named = bool(from_album) and match.similarity(_norm_album(o["title"]), _norm_album(from_album)) >= 0.85
-        return (not named, joins(o)[0] is None, bool(NOT_ORIGINAL & set(o["secondary"])), o["status"] != "Official",
+        return (not _names(o, from_album), joins(o)[0] is None, bool(NOT_ORIGINAL & set(o["secondary"])), o["status"] != "Official",
                 TYPE_ORDER.get(o["type"], 3), bool(library_release) and o["release_id"] != library_release,
                 o["date"] or "9999", -shared[o["group"]], o["title"])
 
@@ -195,14 +234,16 @@ def state(conn, root=None):
     for album in albums:
         rows = []
         for song in by_folder[album["folder"]]:
-            if (song["album"] or "") != album["album"]:
+            if (song["album"] or "") != album["album"] or ("only" in album and song["id"] not in album["only"]):
                 continue
             r = looked.get(song["id"])
+            hint = from_hint(song)  # 'Song (From "Film")': the film's album first
             row = {"id": song["id"], "path": song["path"], "title": song["title"], "artist": song["artist"],
-                   "status": r["status"] if r else None, "how": r["how"] if r else None, "options": [], "chosen": None, "target": None}
+                   "status": r["status"] if r else None, "how": r["how"] if r else None, "options": [], "chosen": None, "target": None,
+                   "from": hint}
+            best_per_group = []
             if r and r["options"]:
-                best_per_group, seen = [], set()
-                hint = rules.from_album(song["title"] or "")[1]  # 'Song (From "Film")': the film's album first
+                seen = set()
                 for o in sorted(r["options"], key=lambda o: rank(o, hint)):  # one edition per release group: the best one
                     if (o["group"] or o["release_id"]) not in seen:
                         seen.add(o["group"] or o["release_id"])
@@ -211,6 +252,13 @@ def state(conn, root=None):
             choice = r["chosen"] if r else None
             if r and choice == "keep":  # left as it is, found or not
                 row.update(chosen="keep", auto=False)
+            elif hint and (choice == "tidy" or (choice is None and mode == "degrease"
+                                                and not (best_per_group and _names(best_per_group[0], hint)))):
+                # keep its album, take the "(From …)" out: chosen, or degreasing's default when the film isn't found
+                row.update(chosen="tidy", auto=choice is None,
+                           target={"tidy": True, "album": song["album"], "label": "its album as it is, title tidied",
+                                   "title": rules.from_album(song["title"] or "")[0], "from": hint,
+                                   "joins": None, "joins_how": None, "duplicate": None, "clashes_with": []})
             elif r and (choice == "single" or (choice is None and r["status"] == "none")):
                 # a single of its own: chosen, or the default for a song MusicBrainz doesn't have
                 row.update(chosen="single", auto=choice is None,
@@ -232,7 +280,7 @@ def state(conn, root=None):
             out.append({**album, "looked_up": sum(1 for x in rows if x["status"]), "songs": rows})
     for rows in claims.values():  # two songs remade into the same album under the same title
         for row in rows:
-            if row["target"].get("single"):
+            if row["target"].get("single") or row["target"].get("tidy"):
                 continue
             row["target"]["clashes_with"] = [x["title"] for x in rows if x is not row] if len(rows) > 1 else []
     return {"albums": out}
@@ -280,11 +328,11 @@ def _summary(conn, release_id):
     return summary
 
 
-def apply(db_path, track_ids, progress=_no_progress):
-    """Remake the songs `track_ids` into their chosen releases, then move them into place."""
+def apply(db_path, track_ids, progress=_no_progress, mode="remake"):
+    """Remake (or degrease) the songs `track_ids` as chosen, then move them into place."""
     conn = crud.connect(db_path)
     root = crud.get_root(conn)
-    rows = {row["id"]: (album, row) for album in state(conn, root)["albums"] for row in album["songs"]}
+    rows = {row["id"]: (album, row) for album in state(conn, root, mode)["albums"] for row in album["songs"]}
     work = [rows[t] for t in track_ids if t in rows and rows[t][1]["target"]]
     by_folder = collections.defaultdict(list)
     for (folder, _), songs in crud.tracks.by_album(conn).items():
@@ -310,11 +358,21 @@ def apply(db_path, track_ids, progress=_no_progress):
         return name
     released = crud.tracks.tag_lookup(conn, ("releasetime",))
     stamp = applier.journal_stamp()
-    backup = f"{stamp}-remake-backup"  # the pictures taken out of remade songs, for undo
+    backup = f"{stamp}-{mode}-backup"  # the pictures taken out of remade songs, for undo
     try:
         for i, (album, row) in enumerate(work):
             target = row["target"]
             progress(i, len(work) + 1, f"{row['title']} → {target['album']}")
+            if target.get("tidy"):  # keep its album; "(From …)" out of the title (and, moving into place, the file name)
+                full = os.path.join(root, row["path"])
+                if target["title"] and target["title"] != row["title"]:
+                    size = os.path.getsize(full)
+                    entries.append({"op": "tags", "path": row["path"], "before": tags.write(full, {"title": [target["title"]]}), "size": size})
+                    scan.refresh(conn, root, row["path"])
+                    conn.commit()
+                done.append(row)
+                stats["tidied"] += 1
+                continue
             if target.get("single"):  # its own single: one-song release by its main artist (cleanup/singles.py)
                 song = next(s for s in by_folder[album["folder"]] if s["id"] == row["id"])
                 values = singles.single_values(song, released.get(song["id"], {}).get("releasetime"))
@@ -341,6 +399,8 @@ def apply(db_path, track_ids, progress=_no_progress):
                 stats["not_on_release"] += 1
                 continue
             values = match.tag_values(summary, track)
+            # on the album it says it's from, the title doesn't need to say so any more
+            values["title"] = [rules.from_album(v)[0] for v in values.get("title", [])]
             if summary["artist"]:
                 values["albumartist"] = [album_artist(summary)]
             if target["joins"]:
@@ -375,9 +435,9 @@ def apply(db_path, track_ids, progress=_no_progress):
         journal = None
         if entries:
             os.makedirs(applier.JOURNAL_DIR, exist_ok=True)
-            journal = os.path.join(applier.JOURNAL_DIR, f"{stamp}-remake.json")
+            journal = os.path.join(applier.JOURNAL_DIR, f"{stamp}-{mode}.json")
             with open(journal, "w", encoding="utf-8") as f:
-                json.dump({"root": root, "created": stamp, "kind": "remake", "stats": stats, "entries": entries,
+                json.dump({"root": root, "created": stamp, "kind": mode, "stats": stats, "entries": entries,
                            **({"backup": backup} if stats["art_removed"] else {})}, f, ensure_ascii=False, indent=1)
         conn.close()
     return {"stats": dict(stats), "journal": journal,

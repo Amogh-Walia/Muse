@@ -1148,59 +1148,15 @@ $("#main").addEventListener("click", async e => {
   }
 });
 
-// --- operations tab: remake Various Artists ------------------------------------------------
+// --- operations tab: remake Various Artists, and the Bollywood degreaser --------------------
+// Both look songs up one by one on MusicBrainz and send each where it belongs; they differ in which songs they
+// offer and what a song does by default. One view serves both, with each tab's own texts and data.
 
-const rm = { data: null, picked: null, off: new Set(), busy: false };
-
-async function loadRemake() {
-  const pane = $("#ops-pane");
-  if (pane && !rm.data) pane.innerHTML = `<div class="empty">Loading…</div>`;
-  try {
-    const r = await fetch("/api/remake");
-    if (!r.ok) throw new Error("This needs the updated server: restart it with .venv/bin/python app.py");
-    rm.data = await r.json();
-  } catch (err) { if (pane) pane.innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
-  if (!rm.picked) rm.picked = new Set(rm.data.albums.filter(a => a.playlist).map(a => a.key));  // playlists, to start with
-  renderRemake();
-}
-
-function remakeRowHtml(r) {
-  const t = r.target, on = t && r.chosen !== "keep" && !rm.off.has(r.id);
-  const where = !r.status ? `<span class="muted">Not looked up yet.</span>`
-    : r.status === "error" ? `<span class="badge bad">Lookup failed</span> <span class="muted">${esc(r.how)}</span>`
-    : r.chosen === "keep" ? `<span class="muted">Left as it is.</span>`
-    : !t ? `<span class="muted">Nothing to do for this song.</span>`
-    : t.single ? (!r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> ` : "") +
-      `<span class="muted">→ a single of its own: ${esc(r.artist || "")} – ${esc(t.album)}, in its own folder</span>`
-    : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new ${t.type === "Single" ? "single" : t.type === "EP" ? "EP" : "album"} in your library</span>`) +
-      (t.duplicate ? ` <span class="badge warn" title="${esc(t.duplicate)}">You already have this song</span> <span class="muted">Clean up shows the two copies to compare and keeps one.</span>` : "") +
-      (t.clashes_with?.length ? ` <span class="badge warn">Same song as ${esc(t.clashes_with.join(", "))}</span> <span class="muted">Clean up compares them.</span>` : "");
-  return `<div class="lyrics-row rm-row">
-    <input type="checkbox" class="rm-song" data-id="${r.id}" ${on ? "checked" : ""} ${t && r.chosen !== "keep" ? "" : "disabled"} aria-label="Remake ${esc(r.title)}">
-    <div><b>${esc(r.title)}</b> <span class="muted">· ${esc(r.artist || "")}${r.how && r.options.length ? ` · found by ${esc(r.how)}` : ""}</span>
-      ${r.status && r.status !== "error" ? `<div><select class="rm-choice" data-id="${r.id}" aria-label="Album for ${esc(r.title)}">
-        ${r.options.map((o, i) => `<option value="${esc(o.release_id)}" ${r.chosen === o.release_id ? "selected" : ""}>${esc(o.label)}${i === 0 ? " (best match)" : ""}</option>`).join("")}
-        <option value="single" ${r.chosen === "single" ? "selected" : ""}>Make it a single of its own${r.options.length ? "" : " (MusicBrainz doesn't have it)"}</option>
-        <option value="keep" ${r.chosen === "keep" ? "selected" : ""}>Leave this song as it is</option></select></div>` : ""}
-      <div class="rm-where">${where}</div></div></div>`;
-}
-
-function renderRemake() {
-  const pane = $("#ops-pane");
-  if (!pane || state.opsTab !== "remake" || !rm.data) return;
-  try { drawRemake(pane); }
-  catch (err) {  // never leave the tab on "Loading…": say what went wrong
-    pane.innerHTML = `<div class="empty">This page couldn't be drawn (${esc(err.message)}). Reload the page; if it keeps happening, the server log has more.</div>`;
-    console.error(err);
-  }
-}
-
-function drawRemake(pane) {
-  const albums = rm.data.albums, looked = albums.filter(a => a.looked_up);
-  const ready = looked.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !rm.off.has(r.id));
-  pane.innerHTML = `<div>
-    <h2>Remake Various Artists</h2>
-    <p class="muted">Some “albums” are really playlists, like Apple Music's <i>… Essentials</i>: every song has the right title and artist, but the album is the playlist.
+const SONG_LOOKUPS = {
+  remake: {
+    title: "Remake Various Artists", verb: "Remake", data: "/api/remake", lookup: "/api/remake/lookup", apply: "/api/remake/apply",
+    empty: "Nothing to remake: no playlist-style or unlinked Various Artists albums.",
+    intro: `<p class="muted">Some “albums” are really playlists, like Apple Music's <i>… Essentials</i>: every song has the right title and artist, but the album is the playlist.
       Here each song is looked up on its own, by its ISRC (a code for the recording that most store-bought files carry) or else by title, artist and length,
       and goes back to the album it first came out on, such as the film soundtrack rather than a later compilation. When that album is already in your library,
       the song joins it. Songs you already have are flagged, and Clean up lets you compare the two copies. Nothing changes until you remake, and one Undo reverses it.</p>
@@ -1209,56 +1165,137 @@ function drawRemake(pane) {
       Any song can be made a single from its dropdown.</p>
     <p class="muted"><b>Artwork:</b> remaking takes the songs' pictures out, since they're the playlist's cover rather than their album's. Their new albums then show up in
       <a href="#" data-sub="art">Album art</a> as albums without art, ready to get their real covers (from the Cover Art Archive, or from songs of that album you already have).
-      Undo puts the old pictures back.</p>
+      Undo puts the old pictures back.</p>`,
+    applyNote: `Their tags are rewritten from the chosen album, their artwork is taken out (for Album art to replace), and they move into place;
+      songs whose place is taken stay for Clean up.`,
+    confirm: n => `Remake ${plural(n, "song")} into their own albums and move them into place? Their artwork is taken out, so the new albums ` +
+      "show up in Album art to get their real covers. Undo history can reverse it.",
+    st: { data: null, picked: null, off: new Set(), busy: false },
+  },
+  degrease: {
+    title: "Bollywood degreaser", verb: "Degrease", data: "/api/degrease", lookup: "/api/degrease/lookup", apply: "/api/degrease/apply",
+    empty: "Nothing to degrease: no song's title or file name says “(From …)”.",
+    intro: `<p class="muted">Store downloads often name the film a song is from: <i>Pyaar Tenu Karda Gabru (From "Shubh Mangal Zyada Saavdhan")</i>. This finds every song
+      whose title or file name says so, wherever it is in your library, and sends it to that film's album: the lookup on MusicBrainz searches by the film
+      (and by the song's ISRC), and the film's album comes first among the choices. On the film's album the “(From …)” isn't needed, so it's dropped from the title
+      and, as the song moves into place, from the file name.</p>
+    <p class="muted"><b>When MusicBrainz doesn't have the film</b> (or before looking up), the song keeps its album and just loses the “(From …)” from its title and
+      file name, so it stops showing up here. Each song's dropdown also offers the other albums it's on, a single of its own, or leaving it as it is.
+      Songs moving to the film's album lose their old album's artwork, for <a href="#" data-sub="art">Album art</a> to give them the film's.
+      Nothing changes until you degrease, and one Undo reverses it.</p>`,
+    applyNote: `Songs going to their film get its tags and move into place; tidied songs keep their album and get the “(From …)” taken out of
+      their title and file name.`,
+    confirm: n => `Degrease ${plural(n, "song")}? Songs go to the film's album where MusicBrainz has it, and the “(From …)” comes out of titles and file names. ` +
+      "Undo history can reverse it.",
+    st: { data: null, picked: null, off: new Set(), busy: false },
+  },
+};
+const rm = SONG_LOOKUPS.remake.st, dg = SONG_LOOKUPS.degrease.st;
+const lookupMode = () => SONG_LOOKUPS[state.opsTab] ? state.opsTab : null;
+
+async function loadSongLookup(mode = lookupMode()) {
+  const cfg = SONG_LOOKUPS[mode], st = cfg.st, pane = $("#ops-pane");
+  if (pane && !st.data && state.opsTab === mode) pane.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    const r = await fetch(cfg.data);
+    if (!r.ok) throw new Error("This needs the updated server: restart it with .venv/bin/python app.py");
+    st.data = await r.json();
+  } catch (err) { if (pane && state.opsTab === mode) pane.innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
+  if (!st.picked) st.picked = new Set(st.data.albums.filter(a => a.playlist).map(a => a.key));  // playlists (or all, degreasing) to start with
+  renderSongLookup(mode);
+}
+const loadRemake = () => loadSongLookup("remake");
+
+function songRowHtml(r, st) {
+  const t = r.target, on = t && r.chosen !== "keep" && !st.off.has(r.id);
+  const where = r.status === "error" ? `<span class="badge bad">Lookup failed</span> <span class="muted">${esc(r.how)}</span>`
+    : r.chosen === "keep" ? `<span class="muted">Left as it is.</span>`
+    : !t ? `<span class="muted">${r.status ? "Nothing to do for this song." : "Not looked up yet."}</span>`
+    : t.tidy ? (r.status && !r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> ` : "") +
+      `<span class="muted">→ stays on its album; the title becomes “${esc(t.title)}”, and the file name with it</span>`
+    : t.single ? (!r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> ` : "") +
+      `<span class="muted">→ a single of its own: ${esc(r.artist || "")} – ${esc(t.album)}, in its own folder</span>`
+    : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new ${t.type === "Single" ? "single" : t.type === "EP" ? "EP" : "album"} in your library</span>`) +
+      (t.duplicate ? ` <span class="badge warn" title="${esc(t.duplicate)}">You already have this song</span> <span class="muted">Clean up shows the two copies to compare and keeps one.</span>` : "") +
+      (t.clashes_with?.length ? ` <span class="badge warn">Same song as ${esc(t.clashes_with.join(", "))}</span> <span class="muted">Clean up compares them.</span>` : "");
+  const choices = (r.status && r.status !== "error") || r.from;
+  return `<div class="lyrics-row rm-row">
+    <input type="checkbox" class="rm-song" data-id="${r.id}" ${on ? "checked" : ""} ${t && r.chosen !== "keep" ? "" : "disabled"} aria-label="Include ${esc(r.title)}">
+    <div><b>${esc(r.title)}</b> <span class="muted">· ${esc(r.artist || "")}${r.how && r.options.length ? ` · found by ${esc(r.how)}` : ""}${r.from ? ` · from <i>${esc(r.from)}</i>` : ""}</span>
+      ${choices ? `<div><select class="rm-choice" data-id="${r.id}" aria-label="Where ${esc(r.title)} goes">
+        ${r.options.map((o, i) => `<option value="${esc(o.release_id)}" ${r.chosen === o.release_id ? "selected" : ""}>${esc(o.label)}${i === 0 ? " (best match)" : ""}</option>`).join("")}
+        ${r.from ? `<option value="tidy" ${r.chosen === "tidy" ? "selected" : ""}>Keep its album, just take “(From …)” out of the title</option>` : ""}
+        ${r.status ? `<option value="single" ${r.chosen === "single" ? "selected" : ""}>Make it a single of its own${r.options.length ? "" : " (MusicBrainz doesn't have it)"}</option>` : ""}
+        <option value="keep" ${r.chosen === "keep" ? "selected" : ""}>Leave this song as it is</option></select></div>` : ""}
+      <div class="rm-where">${where}</div></div></div>`;
+}
+
+function renderSongLookup(mode = lookupMode()) {
+  const pane = $("#ops-pane"), cfg = SONG_LOOKUPS[mode];
+  if (!pane || !cfg || state.opsTab !== mode || !cfg.st.data) return;
+  try { drawSongLookup(pane, cfg); }
+  catch (err) {  // never leave the tab on "Loading…": say what went wrong
+    pane.innerHTML = `<div class="empty">This page couldn't be drawn (${esc(err.message)}). Reload the page; if it keeps happening, the server log has more.</div>`;
+    console.error(err);
+  }
+}
+const renderRemake = () => renderSongLookup("remake");
+
+function drawSongLookup(pane, cfg) {
+  const st = cfg.st, albums = st.data.albums, shown = albums.filter(a => a.looked_up || a.songs.some(r => r.target));
+  const ready = shown.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !st.off.has(r.id));
+  pane.innerHTML = `<div>
+    <h2>${cfg.title}</h2>
+    ${cfg.intro}
     ${albums.length ? `<h3>Albums (${albums.length})</h3>
-      ${albums.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="rm-album" data-key="${keyAttr(a.key)}" ${rm.picked.has(a.key) ? "checked" : ""}>
+      ${albums.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="rm-album" data-key="${keyAttr(a.key)}" ${st.picked.has(a.key) ? "checked" : ""}>
         <div>${esc(a.album || a.folder)} <span class="muted">· ${plural(a.songs.length, "song")}${a.looked_up ? ` · ${a.looked_up} looked up` : ""}</span>
           <span class="badge ${a.playlist ? "warn" : ""}">${esc(a.reason)}</span><br><code class="muted">${esc(a.folder)}</code></div></label>`).join("")}
-      <div class="actions"><button class="btn primary" id="rm-lookup" ${rm.picked.size ? "" : "disabled"}>Look up the songs</button>
+      <div class="actions"><button class="btn primary" id="rm-lookup" ${st.picked.size ? "" : "disabled"}>Look up the songs</button>
         <label><input type="checkbox" id="rm-refresh"> Look up again (songs already looked up)</label>
         <span class="muted">About two seconds a song.</span></div>`
-      : `<p class="muted">Nothing to remake: no playlist-style or unlinked Various Artists albums.</p>`}
-    <div class="progress" id="rm-progress" data-ops="remake" hidden>
-      <div class="track" role="progressbar" aria-label="Remake progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      : `<p class="muted">${cfg.empty}</p>`}
+    <div class="progress" id="rm-progress" data-ops="remake degrease" hidden>
+      <div class="track" role="progressbar" aria-label="Lookup progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
       <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
     </div>
     <p class="muted" id="rm-msg" role="status"></p>
-    ${looked.length ? `<h3>Where the songs would go</h3>
-      ${looked.map(a => {
+    ${shown.length ? `<h3>Where the songs would go</h3>
+      ${shown.map(a => {
         const found = a.songs.filter(r => r.options.length), dup = a.songs.filter(r => r.target && (r.target.duplicate || r.target.clashes_with?.length)).length;
-        const missing = a.songs.filter(r => r.status && !r.options.length).length;
-        return `<details class="rm-group" open><summary><b>${esc(a.album || a.folder)}</b> <span class="muted">· ${found.length} of ${a.songs.length} found${dup ? ` · ${dup} you may already have` : ""}${missing ? ` · ${missing} not on MusicBrainz` : ""}</span></summary>
-          ${a.songs.map(remakeRowHtml).join("")}</details>`;
+        const missing = a.songs.filter(r => r.status && !r.options.length).length, looked = a.songs.filter(r => r.status).length;
+        return `<details class="rm-group" open><summary><b>${esc(a.album || a.folder)}</b> <span class="muted">· ${looked ? `${found.length} of ${a.songs.length} found` : `${plural(a.songs.length, "song")}, not looked up yet`}${dup ? ` · ${dup} you may already have` : ""}${missing ? ` · ${missing} not on MusicBrainz` : ""}</span></summary>
+          ${a.songs.map(r => songRowHtml(r, st)).join("")}</details>`;
       }).join("")}
-      <div class="actions" style="margin-top:12px"><button class="btn primary" id="rm-apply" ${ready.length ? "" : "disabled"}>Remake ${plural(ready.length, "song")}</button>
-        <span class="muted">Their tags are rewritten from the chosen album, their artwork is taken out (for Album art to replace), and they move into place;
-          songs whose place is taken stay for Clean up.</span></div>` : ""}
+      <div class="actions" style="margin-top:12px"><button class="btn primary" id="rm-apply" ${ready.length ? "" : "disabled"}>${cfg.verb} ${plural(ready.length, "song")}</button>
+        <span class="muted">${cfg.applyNote}</span></div>` : ""}
   </div>`;
 }
 
 $("#main").addEventListener("change", async e => {
-  if (state.view !== "operations" || state.opsTab !== "remake" || rm.busy) return;
+  const mode = state.view === "operations" && lookupMode(), st = mode && SONG_LOOKUPS[mode].st;
+  if (!st || st.busy) return;
   const el = e.target;
   if (el.classList.contains("rm-album")) {
     const key = keyFrom(el.dataset.key);
-    el.checked ? rm.picked.add(key) : rm.picked.delete(key);
-    renderRemake();
+    el.checked ? st.picked.add(key) : st.picked.delete(key);
+    renderSongLookup(mode);
   }
-  if (el.classList.contains("rm-song")) { el.checked ? rm.off.delete(+el.dataset.id) : rm.off.add(+el.dataset.id); renderRemake(); }
+  if (el.classList.contains("rm-song")) { el.checked ? st.off.delete(+el.dataset.id) : st.off.add(+el.dataset.id); renderSongLookup(mode); }
   if (el.classList.contains("rm-choice")) {
     el.disabled = true;
-    try { await post("/api/remake/choose", { track_id: +el.dataset.id, choice: el.value }); await loadRemake(); }
+    try { await post("/api/remake/choose", { track_id: +el.dataset.id, choice: el.value }); await loadSongLookup(mode); }
     catch (err) { $("#rm-msg").textContent = err.message; el.disabled = false; }
   }
 });
 $("#main").addEventListener("click", e => {
-  if (state.view !== "operations" || state.opsTab !== "remake" || rm.busy) return;
-  if (e.target.id === "rm-lookup") runJob("remake", "/api/remake/lookup", { keys: [...rm.picked], refresh: $("#rm-refresh").checked });
+  const mode = state.view === "operations" && lookupMode(), cfg = mode && SONG_LOOKUPS[mode];
+  if (!cfg || cfg.st.busy) return;
+  if (e.target.id === "rm-lookup") runJob(mode, cfg.lookup, { keys: [...cfg.st.picked], refresh: $("#rm-refresh").checked });
   if (e.target.id === "rm-apply") {
-    const ids = rm.data.albums.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !rm.off.has(r.id)).map(r => r.id);
-    if (!confirm(`Remake ${plural(ids.length, "song")} into their own albums and move them into place? Their artwork is taken out, so the new albums ` +
-                 "show up in Album art to get their real covers. Undo history can reverse it.")) return;
-    runJob("remake", "/api/remake/apply", { track_ids: ids });
+    const ids = cfg.st.data.albums.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !cfg.st.off.has(r.id)).map(r => r.id);
+    if (!confirm(cfg.confirm(ids.length))) return;
+    runJob(mode, cfg.apply, { track_ids: ids });
   }
 });
 
@@ -1327,7 +1364,7 @@ $("#appearance").addEventListener("click", async e => {
 
 // --- operations tab: process steps and sub-tabs ------------------------------------
 
-const OPS_TABS = [["scrape", "Scrape Details"], ["art", "Album art"], ["lyrics", "Lyrics"], ["cleanup", "Clean up"], ["merge", "Merge albums"], ["remake", "Remake Various Artists"],
+const OPS_TABS = [["scrape", "Scrape Details"], ["art", "Album art"], ["lyrics", "Lyrics"], ["cleanup", "Clean up"], ["merge", "Merge albums"], ["remake", "Remake Various Artists"], ["degrease", "Bollywood degreaser"],
                   ["history", "Undo history"]];
 
 function goOps(tab) {
@@ -1387,7 +1424,7 @@ function renderOpsPane() {
   }
   if (state.opsTab === "lyrics") { pane.innerHTML = `<div id="lyrics-op">${lyricsOpHtml()}</div>`; return loadLyricsOp(); }
   if (state.opsTab === "merge") return loadMerge();
-  if (state.opsTab === "remake") return loadRemake();
+  if (state.opsTab === "remake" || state.opsTab === "degrease") return loadSongLookup(state.opsTab);
   if (state.opsTab === "history") {
     pane.innerHTML = `<div id="house">${housekeepingHtml() || '<div class="empty">Loading…</div>'}</div>`;
     return loadHousekeeping().then(() => { if ($("#house")) $("#house").innerHTML = housekeepingHtml(); });
@@ -1398,7 +1435,7 @@ function renderOpsPane() {
 // After a job, refresh the visible pane's data (Clean up and Scrape Details reload themselves).
 async function refreshOpsPane() {
   if (state.opsTab === "merge") return loadMerge();
-  if (state.opsTab === "remake") return loadRemake();
+  if (state.opsTab === "remake" || state.opsTab === "degrease") return loadSongLookup(state.opsTab);
   if (state.opsTab === "art") return loadArt();
   if (state.opsTab === "lyrics") return loadLyricsOp();
   if (state.opsTab === "history") { await loadHousekeeping(); if ($("#house")) $("#house").innerHTML = housekeepingHtml(); }
@@ -2085,10 +2122,10 @@ $("#mb").addEventListener("click", async e => {
 const UNITS = { apply: "songs", undo: "steps", scan: "files" };
 const JOB_NAMES = { apply: "cleanup", undo: "undo", scan: "scan", musicbrainz: "Scrape Details run", artwork: "artwork run",
                     lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge", import: "import", export: "export",
-                    remake: "remake", single: "single", artistart: "artist picture search" };
+                    remake: "remake", degrease: "degreaser run", single: "single", artistart: "artist picture search" };
 // Where each job is started from: the header indicator takes you there.
 const JOB_HOME = { apply: "cleanup", undo: "history", musicbrainz: "scrape", artwork: "art", lyrics: "lyrics", merge: "merge",
-                   housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer", remake: "remake" };
+                   housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer", remake: "remake", degrease: "degrease" };
 const TOP_VIEWS = ["ingest", "transfer"];  // homes that are whole tabs rather than Operations sub-tabs
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -2152,6 +2189,14 @@ const JOB_TEXT = {
     done: r => `Remade ${plural(r.stats.remade || 0, "song")}` + (r.stats.singles ? `, ${plural(r.stats.singles, "song")} made singles` : "") + (r.stats.joined ? ` (${r.stats.joined} joined albums you have)` : "") +
       `, ${r.stats.moved || 0} moved into place` + (r.stats.art_removed ? `, artwork taken out of ${r.stats.art_removed}: get their real covers in Album art` : "") + (r.clashes ? `. ${r.clashes} may be songs you already have: Clean up shows them to compare` : "") +
       (r.stats.folders_emptied ? `. ${plural(r.stats.folders_emptied, "emptied playlist folder")} went to the trash` : "") + "." },
+  "/api/degrease/lookup": { op: "degrease", label: "Looking the songs up on MusicBrainz (about two seconds a song)…",
+    done: r => r.songs ? `Looked up ${plural(r.songs, "song")}: ${r.found || 0} found, ${r.none || 0} not on MusicBrainz` +
+      (r.error ? `, ${r.error} failed (try again later)` : "") + ". Check where they'd go below."
+      : "Every song of these albums has been looked up. Tick “Look up again” to refresh." },
+  "/api/degrease/apply": { op: "degrease", label: "Degreasing…",
+    done: r => `Done: ${plural((r.stats.remade || 0) + (r.stats.singles || 0), "song")} went to ${r.stats.remade ? "their film's album" : "their own albums"}` +
+      `, ${plural(r.stats.tidied || 0, "title")} tidied, ${r.stats.moved || 0} files moved or renamed` +
+      (r.clashes ? `. ${r.clashes} may be songs you already have: Clean up shows them to compare` : "") + "." },
   "/api/merge/apply": { op: "merge", label: "Merging…",
     done: r => `Merged: ${r.stats.retagged || 0} songs retagged, ${r.stats.moved || 0} moved.` +
       (r.warnings.length ? " Some songs share a track number: Clean up shows them as duplicates to compare." : "") },
@@ -2180,8 +2225,10 @@ const PANES = {
             reload: async () => { await loadLibrary(); if (PANES.single.trackId) await showTrack(PANES.single.trackId); } },
   artedit: { ops: ["artwork"], state: ae, buttons: "#artedit button, #artedit input", msg: "#ae-msg",
              reload: async () => { state.artVersion = Date.now(); await refreshArtEdit(); await loadLibrary(); } },
-  remake: { ops: ["remake"], state: rm, buttons: "#ops-pane button, #ops-pane select", msg: "#rm-msg",
-            reload: async () => { await loadLibrary(); await loadRemake(); } },
+  remake: { ops: ["remake"], tab: "remake", state: rm, buttons: "#ops-pane button, #ops-pane select", msg: "#rm-msg",
+            reload: async () => { await loadLibrary(); await loadSongLookup("remake"); } },
+  degrease: { ops: ["degrease"], tab: "degrease", state: dg, buttons: "#ops-pane button, #ops-pane select", msg: "#rm-msg",
+              reload: async () => { await loadLibrary(); await loadSongLookup("degrease"); } },
   merge: { ops: ["merge"], state: merge, buttons: "#ops-pane button", msg: "#merge-msg",
            reload: async () => { await loadLibrary(); await loadMerge(); } },
   history: { ops: ["undo", "housekeeping"], state: { busy: false }, buttons: "#house button", msg: "#house-msg",
@@ -2217,7 +2264,7 @@ async function pollJobs() {
   if (gen === jobs.gen) jobs.timer = setTimeout(pollJobs, currentJob() ? 500 : document.hidden ? 15000 : 4000);
 }
 
-const paneVisible = pane => { const el = $(pane.msg); return !!el && el.getClientRects().length > 0; };
+const paneVisible = pane => { const el = $(pane.msg); return !!el && el.getClientRects().length > 0 && (!pane.tab || state.opsTab === pane.tab); };
 
 function setMsg(pane, text, err) {
   const el = $(pane.msg);

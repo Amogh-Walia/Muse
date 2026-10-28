@@ -175,6 +175,17 @@ Some "albums" are really playlists, such as Apple Music's *… Essentials* or *R
   - It's one entry in Undo history, and the lookups are kept, so an undone remake can be redone without looking up again.
   - Songs MusicBrainz doesn't have stay where they are.
 
+## Bollywood degreaser
+
+Store downloads often say which film a song is from, in the title or the file name: `Pyaar Tenu Karda Gabru (From "Shubh Mangal Zyada Saavdhan")`, `Dekhte Dekhte (From 'Batti Gul Meter Chalu')`. Operations → **Bollywood degreaser** finds every such song, wherever it is: a playlist, a compilation like *#1 Hits of Pritam*, or a single. It sends each to the film's album.
+
+- **Lookup:** it's the same as Remake Various Artists (by ISRC, else by title and artist), with the film added to the search. The film's album comes first among each song's options.
+- **Default, film found:** the song goes to the film's album. It gets the film's tags (joining the album if you have it), loses the old album's artwork for Album art to replace, and moves into place. On the film's album the "(From …)" isn't needed, so it's dropped from the title and the file name.
+- **Default, film not found** (or not looked up yet): **tidy**. The song keeps its album, and the "(From …)" comes out of its title. Moving into place then takes it out of the file name.
+- **Other choices:** each song's dropdown also offers the other albums it's on, a single of its own, or leaving it as it is.
+
+Afterwards the songs no longer say "(From …)", so they don't show up here again. One Undo reverses it all.
+
 ## Import / Export
 
 **Import** brings a folder of music into the inbox in one go. Pick the folder with the folder picker, which shows mounted drives such as USB sticks, then **Check this folder** to see how many songs it holds and where they'll go.
