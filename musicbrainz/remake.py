@@ -118,7 +118,12 @@ def lookup(db_path, keys, refresh=False, skip=(), finished=None, progress=_no_pr
     skipped unless `refresh`."""
     conn = crud.connect(db_path)
     groups = crud.tracks.by_album(conn)
-    wanted = {(k.split("\x00")[0], k.split("\x00", 1)[1].lower()) for k in keys}
+    wanted = set()
+    for k in keys:
+        folder, sep, album = k.partition("\x00")
+        if not sep:
+            raise ValueError("an album was picked from an out-of-date page: reload it and pick again")
+        wanted.add((folder, album.lower()))
     codes = crud.tracks.tag_lookup(conn, ("isrc", "tsrc"))
     known = crud.remake.songs(conn)
     todo = [s for g in wanted for s in groups.get(g, []) if (refresh or s["id"] not in known) and s["id"] not in skip]
@@ -204,7 +209,9 @@ def state(conn, root=None):
                         best_per_group.append(o)
                 row["options"] = [{"release_id": o["release_id"], "label": _option_label(o)} for o in best_per_group[:MAX_OPTIONS]]
             choice = r["chosen"] if r else None
-            if r and (choice == "single" or (choice is None and r["status"] == "none")):
+            if r and choice == "keep":  # left as it is, found or not
+                row.update(chosen="keep", auto=False)
+            elif r and (choice == "single" or (choice is None and r["status"] == "none")):
                 # a single of its own: chosen, or the default for a song MusicBrainz doesn't have
                 row.update(chosen="single", auto=choice is None,
                            target={"single": True, "album": rules.clean_title(song["title"] or "")[0], "label": "a single of its own",

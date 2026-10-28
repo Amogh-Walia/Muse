@@ -147,6 +147,10 @@ const dur = s => { if (!s) return ""; s = Math.round(s); const h = s / 3600 | 0,
 const bytes = n => n > 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(1) + " MB";
 const quality = t => [t.ext?.toUpperCase?.() ?? t.formats?.toUpperCase(), t.bit_depth && t.bit_depth + "-bit", t.sample_rate && (t.sample_rate / 1000) + " kHz"].filter(Boolean).join(" · ");
 const api = p => fetch(p).then(r => r.json());
+// Album keys ("folder\x00album") can't sit in HTML attributes as they are: browsers turn the \x00 into "�".
+// Keys go into attributes encoded, and come back out decoded.
+const keyAttr = k => esc(encodeURIComponent(k));
+const keyFrom = v => decodeURIComponent(v);
 // Cover images are cached by the browser; the version changes after artwork is edited, so pages show the new one.
 const coverUrl = (id, embeddedOnly) => `/cover/${id}?v=${state.artVersion}${embeddedOnly ? "&embedded=1" : ""}`;
 
@@ -1057,11 +1061,11 @@ function renderMergePane() {
     <h3>Pick albums</h3>
     <div class="actions"><input type="search" id="merge-filter" placeholder="Search albums by name, artist or folder…" value="${esc(merge.filter)}"
       style="flex:1;max-width:420px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit"></div>
-    ${shown.length ? shown.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="merge-pick" data-key="${esc(a.key)}" ${merge.selected.has(a.key) ? "checked" : ""}>
+    ${shown.length ? shown.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="merge-pick" data-key="${keyAttr(a.key)}" ${merge.selected.has(a.key) ? "checked" : ""}>
         <div>${albumLabel(a)}${a.musicbrainz ? ` <span class="badge ok">MusicBrainz</span>` : ""}<br><code class="muted">${esc(a.folder)}</code></div></label>`).join("")
       : `<p class="muted">${f ? "No album matches." : "Type to search, or start from a suggestion."}</p>`}
     ${chosen.length ? `<h3>Keep whose details? (${chosen.length} albums picked)</h3>
-      ${chosen.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="radio" name="merge-target" value="${esc(a.key)}" ${merge.target === a.key ? "checked" : ""}>
+      ${chosen.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="radio" name="merge-target" value="${keyAttr(a.key)}" ${merge.target === a.key ? "checked" : ""}>
         <div>${albumLabel(a)}${a.musicbrainz ? ` <span class="badge ok">MusicBrainz</span>` : ""}</div></label>`).join("")}
       <div class="actions" style="margin-top:10px">
         <label><input type="checkbox" id="merge-move" ${merge.move ? "checked" : ""}> Also move the songs into one folder</label>
@@ -1105,12 +1109,12 @@ $("#main").addEventListener("change", e => {
   if (state.view !== "operations" || state.opsTab !== "merge") return;
   const el = e.target;
   if (el.classList.contains("merge-pick")) {
-    el.checked ? merge.selected.add(el.dataset.key) : merge.selected.delete(el.dataset.key);
+    el.checked ? merge.selected.add(keyFrom(el.dataset.key)) : merge.selected.delete(keyFrom(el.dataset.key));
     if (!merge.selected.has(merge.target)) merge.target = null;
     merge.preview = null;
     renderMergePane();
   }
-  if (el.name === "merge-target") { merge.target = el.value; merge.preview = null; renderMergePane(); }
+  if (el.name === "merge-target") { merge.target = keyFrom(el.value); merge.preview = null; renderMergePane(); }
   if (el.id === "merge-move") { merge.move = el.checked; renderMergePane(); }
 });
 $("#main").addEventListener("click", async e => {
@@ -1165,6 +1169,7 @@ function remakeRowHtml(r) {
   const where = !r.status ? `<span class="muted">Not looked up yet.</span>`
     : r.status === "error" ? `<span class="badge bad">Lookup failed</span> <span class="muted">${esc(r.how)}</span>`
     : r.chosen === "keep" ? `<span class="muted">Left as it is.</span>`
+    : !t ? `<span class="muted">Nothing to do for this song.</span>`
     : t.single ? (!r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> ` : "") +
       `<span class="muted">→ a single of its own: ${esc(r.artist || "")} – ${esc(t.album)}, in its own folder</span>`
     : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new ${t.type === "Single" ? "single" : t.type === "EP" ? "EP" : "album"} in your library</span>`) +
@@ -1183,6 +1188,14 @@ function remakeRowHtml(r) {
 function renderRemake() {
   const pane = $("#ops-pane");
   if (!pane || state.opsTab !== "remake" || !rm.data) return;
+  try { drawRemake(pane); }
+  catch (err) {  // never leave the tab on "Loading…": say what went wrong
+    pane.innerHTML = `<div class="empty">This page couldn't be drawn (${esc(err.message)}). Reload the page; if it keeps happening, the server log has more.</div>`;
+    console.error(err);
+  }
+}
+
+function drawRemake(pane) {
   const albums = rm.data.albums, looked = albums.filter(a => a.looked_up);
   const ready = looked.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !rm.off.has(r.id));
   pane.innerHTML = `<div>
@@ -1198,7 +1211,7 @@ function renderRemake() {
       <a href="#" data-sub="art">Album art</a> as albums without art, ready to get their real covers (from the Cover Art Archive, or from songs of that album you already have).
       Undo puts the old pictures back.</p>
     ${albums.length ? `<h3>Albums (${albums.length})</h3>
-      ${albums.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="rm-album" data-key="${esc(a.key)}" ${rm.picked.has(a.key) ? "checked" : ""}>
+      ${albums.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="rm-album" data-key="${keyAttr(a.key)}" ${rm.picked.has(a.key) ? "checked" : ""}>
         <div>${esc(a.album || a.folder)} <span class="muted">· ${plural(a.songs.length, "song")}${a.looked_up ? ` · ${a.looked_up} looked up` : ""}</span>
           <span class="badge ${a.playlist ? "warn" : ""}">${esc(a.reason)}</span><br><code class="muted">${esc(a.folder)}</code></div></label>`).join("")}
       <div class="actions"><button class="btn primary" id="rm-lookup" ${rm.picked.size ? "" : "disabled"}>Look up the songs</button>
@@ -1212,7 +1225,7 @@ function renderRemake() {
     <p class="muted" id="rm-msg" role="status"></p>
     ${looked.length ? `<h3>Where the songs would go</h3>
       ${looked.map(a => {
-        const found = a.songs.filter(r => r.target), dup = found.filter(r => r.target.duplicate || r.target.clashes_with?.length).length;
+        const found = a.songs.filter(r => r.options.length), dup = a.songs.filter(r => r.target && (r.target.duplicate || r.target.clashes_with?.length)).length;
         const missing = a.songs.filter(r => r.status && !r.options.length).length;
         return `<details class="rm-group" open><summary><b>${esc(a.album || a.folder)}</b> <span class="muted">· ${found.length} of ${a.songs.length} found${dup ? ` · ${dup} you may already have` : ""}${missing ? ` · ${missing} not on MusicBrainz` : ""}</span></summary>
           ${a.songs.map(remakeRowHtml).join("")}</details>`;
@@ -1226,7 +1239,11 @@ function renderRemake() {
 $("#main").addEventListener("change", async e => {
   if (state.view !== "operations" || state.opsTab !== "remake" || rm.busy) return;
   const el = e.target;
-  if (el.classList.contains("rm-album")) { el.checked ? rm.picked.add(el.dataset.key) : rm.picked.delete(el.dataset.key); renderRemake(); }
+  if (el.classList.contains("rm-album")) {
+    const key = keyFrom(el.dataset.key);
+    el.checked ? rm.picked.add(key) : rm.picked.delete(key);
+    renderRemake();
+  }
   if (el.classList.contains("rm-song")) { el.checked ? rm.off.delete(+el.dataset.id) : rm.off.add(+el.dataset.id); renderRemake(); }
   if (el.classList.contains("rm-choice")) {
     el.disabled = true;
