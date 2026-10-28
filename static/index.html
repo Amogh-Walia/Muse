@@ -1,0 +1,1593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muse</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+<header>
+  <h1 title="My Unruly Songs, Edited">M<span>u</span>se</h1>
+  <nav><button data-view="albums" class="on">Albums</button><button data-view="tracks">Tracks</button><button data-view="ingest">Ingest<span class="count" id="ingest-count"></span></button><button data-view="operations">Operations</button></nav>
+  <input type="search" id="q" placeholder="Search title, artist, album, genre, path…">
+  <div id="stats"></div>
+  <div id="job" role="status" hidden><button id="job-name" class="btn link" title="Go to it"></button><button class="btn pstop" type="button">Stop</button></div>
+  <button id="open-appearance" aria-haspopup="dialog" title="Colours">◐ Appearance</button>
+</header>
+<main id="main"></main>
+<div id="lyrics-panel" role="region" aria-label="Lyrics" aria-live="off"></div>
+<div id="player" role="region" aria-label="Player">
+  <img id="player-art" alt="">
+  <div class="now"><b id="player-title"></b><span id="player-sub"></span></div>
+  <div class="ctl">
+    <button id="player-prev" aria-label="Previous">⏮</button>
+    <button id="player-next" aria-label="Next">⏭</button>
+    <button id="player-lyrics" class="lyr" aria-label="Lyrics" title="Lyrics" aria-pressed="false">♪</button>
+  </div>
+  <audio id="audio" controls preload="none"></audio>
+  <button class="btn link" id="player-close" aria-label="Close player">✕</button>
+</div>
+<aside id="detail"></aside>
+<div id="cleanup" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">
+  <div class="modal">
+    <header>
+      <h2 id="cleanup-title">Clean up library</h2>
+      <p class="lede" id="cleanup-lede">Reading tags…</p>
+      <div id="clash-bar" hidden><span id="clash-bar-text"></span><button class="btn" id="open-clashes">Compare &amp; resolve…</button></div>
+      <div class="opts">
+        <label><input type="checkbox" id="opt-tags" checked> Fix tags</label>
+        <label><input type="checkbox" id="opt-rename" checked> Rename &amp; move files</label>
+        <span class="spacer"></span>
+        <button class="btn link" id="expand-all">Expand all</button>
+        <button class="btn link" id="collapse-all">Collapse all</button>
+      </div>
+    </header>
+    <div class="body" id="cleanup-body"></div>
+    <div class="progress" id="cleanup-progress" data-ops="apply undo" hidden>
+      <div class="track" role="progressbar" aria-label="Cleanup progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <footer>
+      <button class="btn" id="undo-cleanup" hidden>Undo last cleanup</button>
+      <span class="msg" id="cleanup-msg"></span>
+      <button class="btn" id="close-cleanup">Cancel</button>
+      <button class="btn primary" id="apply-cleanup" disabled>Apply</button>
+    </footer>
+  </div>
+</div>
+<div id="mb" role="dialog" aria-modal="true" aria-labelledby="mb-title">
+  <div class="modal">
+    <header>
+      <h2 id="mb-title">Scrape Details</h2>
+      <p class="lede" id="mb-lede">Loading…</p>
+      <div class="opts">
+        <button class="btn primary" id="mb-fetch">Look up albums</button>
+        <label><input type="checkbox" id="mb-refresh"> Re-check albums already matched</label>
+        <span class="spacer"></span>
+        <button class="btn link" id="mb-expand">Expand all</button>
+        <button class="btn link" id="mb-collapse">Collapse all</button>
+      </div>
+    </header>
+    <div class="body" id="mb-body"></div>
+    <div class="progress" id="mb-progress" data-ops="musicbrainz" hidden>
+      <div class="track" role="progressbar" aria-label="Scrape Details progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <footer>
+      <span class="msg" id="mb-msg"></span>
+      <button class="btn" id="mb-close">Close</button>
+      <button class="btn primary" id="mb-apply" disabled>Apply</button>
+    </footer>
+  </div>
+</div>
+<div id="appearance" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
+  <div class="modal appearance-modal">
+    <header>
+      <h2 id="appearance-title">Appearance</h2>
+      <p class="lede">Accent colours, for light and dark mode (your system setting picks which). Changes preview as you go; Save stores them in .env.</p>
+    </header>
+    <div class="body">
+      <table class="colors"><thead><tr><th></th><th>Light</th><th>Dark</th></tr></thead><tbody id="appearance-rows"></tbody></table>
+      <div class="swatches" aria-label="Preview">
+        <button class="btn primary" type="button" tabindex="-1">Accent button</button>
+        <a href="#" onclick="return false" tabindex="-1">A link</a>
+        <span class="badge ok">Complete</span><span class="badge warn">Check this</span><span class="badge bad">Poor match</span>
+        <span class="old">removed</span><span class="new">added</span>
+      </div>
+    </div>
+    <footer>
+      <button class="btn link" id="appearance-reset">Reset to defaults</button>
+      <span class="msg" id="appearance-msg"></span>
+      <button class="btn" id="appearance-cancel">Cancel</button>
+      <button class="btn primary" id="appearance-save">Save</button>
+    </footer>
+  </div>
+</div>
+<div id="clash" role="dialog" aria-modal="true" aria-labelledby="clash-title">
+  <div class="modal clash-modal">
+    <header>
+      <h2 id="clash-title">Name clash</h2>
+      <p class="lede" id="clash-lede"></p>
+    </header>
+    <div class="body" id="clash-body"></div>
+    <footer>
+      <button class="btn" id="clash-prev">← Previous</button>
+      <span class="msg" id="clash-pos"></span>
+      <button class="btn" id="clash-next">Next →</button>
+      <button class="btn primary" id="clash-done">Done</button>
+    </footer>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dur = s => { if (!s) return ""; s = Math.round(s); const h = s / 3600 | 0, m = (s % 3600) / 60 | 0, x = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`; };
+const bytes = n => n > 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(1) + " MB";
+const quality = t => [t.ext?.toUpperCase?.() ?? t.formats?.toUpperCase(), t.bit_depth && t.bit_depth + "-bit", t.sample_rate && (t.sample_rate / 1000) + " kHz"].filter(Boolean).join(" · ");
+const api = p => fetch(p).then(r => r.json());
+
+const state = { view: "albums", q: "", folder: null, sort: null, dir: "asc", albums: [], opsTab: "scrape" };
+try { state.opsTab = localStorage.getItem("muse.opsTab") || state.opsTab; } catch {}  // remember the last sub-tab
+
+const COLS = [
+  ["track_no", "#", "num"], ["title", "Title", "wrap"], ["artist", "Artist", "wrap"], ["album", "Album", "wrap"],
+  ["year", "Year", "num"], ["genre", "Genre"], ["duration", "Time", "num"], ["bitrate", "Kbps", "num"], ["filename", "File", "dim"],
+];
+
+async function render() {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.view === state.view));
+  dockPanels();
+  if (state.view === "ingest") return renderIngest();
+  if (state.view === "operations") return renderOperations();
+  if (state.view === "albums" && state.folder === null) return renderAlbums();
+  return renderTracks();
+}
+
+function renderAlbums() {
+  const q = state.q.toLowerCase();
+  const list = state.albums.filter(a => !q || [a.folder, a.albums, a.artist, a.year].join(" ").toLowerCase().includes(q));
+  $("#main").innerHTML = list.length ? `<div class="grid">${list.map(a => `
+    <div class="album" data-folder="${esc(a.folder)}" title="${esc(a.folder)}">
+      <div class="art"><img loading="lazy" src="/cover/${a.cover_id}" onerror="this.replaceWith('♪')"></div>
+      <div class="t">${a.folder === "" ? "Loose files (library root)" : esc(a.albums)}</div>
+      <div class="s">${esc(a.artist || "Unknown artist")}${a.year ? " · " + a.year : ""}</div>
+      <div class="s">${a.tracks} tracks · ${dur(a.duration)} · ${esc(quality(a))}</div>
+      <div class="flags">${a.complete === 0 ? `<span class="badge warn">Incomplete · ${a.missing} missing</span>`
+        : a.complete === 1 ? `<span class="badge ok">Complete</span>` : ""}${a.editions > 1
+        ? `<span class="badge warn" title="Its songs point at ${a.editions} different MusicBrainz editions">Mixed editions</span>` : ""}</div>
+    </div>`).join("")}</div>` : `<div class="empty">No albums match.</div>`;
+}
+
+async function renderTracks() {
+  const p = new URLSearchParams();
+  if (state.q) p.set("q", state.q);
+  if (state.folder !== null) p.set("folder", state.folder);
+  if (state.sort) { p.set("sort", state.sort); p.set("dir", state.dir); }
+  const [rows, missing] = await Promise.all([api("/api/tracks?" + p),
+    state.folder !== null && !state.q ? api("/api/missing?" + new URLSearchParams({ folder: state.folder })) : []]);
+  // In an album, songs missing from the release sit in their place in the running order.
+  const order = t => (t.disc_no || 1) * 1000 + (t.track_no || 0);
+  const all = state.sort ? [...rows, ...missing.map(m => ({ ...m, missing: true }))]
+    : [...rows, ...missing.map(m => ({ ...m, missing: true }))].sort((a, b) => order(a) - order(b));
+  state.rows = rows;
+  const ndAlbum = rows.find(t => t.navidrome_album_id)?.navidrome_album_id;
+  const crumb = state.folder !== null ? `<div class="crumb"><button id="back">← All albums</button><strong>${state.folder === "" ? "Loose files" : esc(rows[0]?.album || state.folder)}</strong><code>${esc(state.folder)}/</code>
+    ${rows.some(canPlay) ? `<button class="btn" id="play-album">▶ Play album</button>` : ""}
+    ${ndAlbum && state.nd?.public_url ? `<a class="btn link" href="${esc(state.nd.public_url)}/app/#/album/${esc(ndAlbum)}/show" target="_blank" rel="noopener">Open in Navidrome ↗</a>` : ""}</div>` : "";
+  $("#main").innerHTML = crumb + (rows.length ? `<div class="tablewrap"><table>
+    <thead><tr>${COLS.map(([k, label, cls]) => `<th data-sort="${k}" class="${cls === "num" ? "num" : ""} ${state.sort === k ? "sorted" : ""}">${label}${state.sort === k ? (state.dir === "asc" ? " ↑" : " ↓") : ""}</th>`).join("")}</tr></thead>
+    <tbody>${all.map(t => t.missing ? `<tr class="missing" title="On the MusicBrainz release, not in your library">
+      <td class="num">${t.disc_no > 1 ? t.disc_no + "-" : ""}${t.track_no ?? ""}</td><td class="wrap">${esc(t.title)}</td>
+      ${"<td>—</td>".repeat(6)}<td>missing</td></tr>` : `<tr data-id="${t.id}">
+      <td class="num"><button class="play-btn" data-id="${t.id}" ${canPlay(t) ? "" : "disabled"} aria-label="Play ${esc(t.title)}"
+        title="${canPlay(t) ? "Play" : "This format plays through Navidrome, which isn't linked for this song"}">▶</button>${t.disc_total > 1 && t.disc_no ? t.disc_no + "-" : ""}${t.track_no ?? ""}</td>
+      <td class="wrap">${esc(t.title)}</td><td class="wrap">${esc(t.artist)}</td><td class="wrap">${esc(t.album)}</td>
+      <td class="num">${t.year ?? ""}</td><td>${esc(t.genre)}</td><td class="num">${dur(t.duration)}</td>
+      <td class="num">${t.bitrate ? Math.round(t.bitrate / 1000) : ""}</td><td class="dim">${esc(t.filename)}</td>
+    </tr>`).join("")}</tbody></table></div>` : `<div class="empty">No tracks match.</div>`);
+}
+
+async function showTrack(id) {
+  document.querySelectorAll("tbody tr").forEach(r => r.classList.toggle("sel", r.dataset.id == id));
+  const t = await api("/api/track/" + id);
+  const props = [quality(t), t.channels && t.channels + " ch", t.bitrate && Math.round(t.bitrate / 1000) + " kbps", t.codec, dur(t.duration), bytes(t.size), t.has_cover ? "embedded art" : "no embedded art"];
+  $("#detail").innerHTML = `<button class="close" aria-label="Close">×</button>
+    <img src="/cover/${t.id}" onerror="this.style.visibility='hidden'">
+    <h2>${esc(t.title || t.filename)}</h2>
+    <div class="sub">${esc(t.artist)} — ${esc(t.album)}${t.year ? " (" + t.year + ")" : ""}</div>
+    <div class="chips">${props.filter(Boolean).map(p => `<span class="chip">${esc(p)}</span>`).join("")}</div>
+    <h3>File</h3><dl><dt>folder</dt><dd>${esc(t.folder)}</dd><dt>file</dt><dd>${esc(t.filename)}</dd></dl>
+    <h3>Pipeline</h3><dl>
+      <dt>processed</dt><dd>${t.processed ? "Yes: catalogued and at its clean location" : "No: catalogued, not yet at its clean location"}</dd>
+      ${!t.processed && t.clean_path ? `<dt>belongs at</dt><dd>${esc(t.clean_path)}</dd>` : ""}
+      <dt>lyrics</dt><dd>${t.lyrics ? `${t.lyrics === "synced" ? "Synced" : "Plain text"} (${t.lyrics_source === "embedded" ? "in the file's tags" : "." + esc(t.lyrics_source) + " file"})` : "None"}</dd>
+      <dt>MusicBrainz</dt><dd>${t.mb_album_id ? `<a href="https://musicbrainz.org/release/${esc(t.mb_album_id)}" target="_blank" rel="noopener">${esc(t.mb_album_id)}</a>` : "Not linked"}</dd>
+    </dl>
+    <h3>All tags (${t.tags.length})</h3>
+    <dl>${t.tags.map(({key, value}) => `<dt>${esc(key)}</dt><dd class="${value.length > 300 || value.split("\n").length > 5 ? "long" : ""}">${esc(value)}</dd>`).join("")}</dl>`;
+  $("#detail").classList.add("open");
+}
+
+document.addEventListener("click", e => {
+  const el = e.target;
+  if (el.closest("#cleanup, #clash, #mb, #player, #appearance")) return;
+  if (state.view === "ingest" && el.closest("#main") && !el.closest("tr[data-id]")) return;
+  if (el.closest("nav button")) { state.view = el.closest("nav button").dataset.view; state.folder = null; return render(); }
+  if (el.closest("[data-sub]")) { e.preventDefault(); return goOps(el.closest("[data-sub]").dataset.sub); }
+  if (el.closest("[data-goto]")) { state.view = el.closest("[data-goto]").dataset.goto; state.folder = null; return render(); }
+  if (el.closest(".album")) { state.folder = el.closest(".album").dataset.folder; state.sort = null; scrollTo(0, 0); return render(); }
+  if (el.id === "back") { state.folder = null; return render(); }
+  if (el.closest("th")) { const k = el.closest("th").dataset.sort;
+    state.dir = state.sort === k && state.dir === "asc" ? "desc" : "asc"; state.sort = k; return render(); }
+  if (el.closest(".play-btn")) { const id = +el.closest(".play-btn").dataset.id; const list = (state.rows || []).filter(canPlay);
+    return playQueue(list, Math.max(0, list.findIndex(t => t.id === id))); }
+  if (el.id === "play-album") return playQueue((state.rows || []).filter(canPlay), 0);
+  if (el.closest("tbody tr[data-id]")) return showTrack(el.closest("tr").dataset.id);
+  if (el.closest(".close")) return $("#detail").classList.remove("open");
+  if (el.matches("dd.long")) el.classList.toggle("x");
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if ($("#appearance").classList.contains("open")) return closeAppearance(false);
+  if ($("#clash").classList.contains("open")) return closeClash();
+  if ($("#cleanup").classList.contains("open") && !$("#cleanup").classList.contains("inline")) return closeCleanup();
+  if ($("#mb").classList.contains("open") && !$("#mb").classList.contains("inline")) return closeMb();
+  $("#detail").classList.remove("open");
+});
+let timer;
+$("#q").addEventListener("input", e => { clearTimeout(timer); timer = setTimeout(() => { state.q = e.target.value.trim(); render(); }, 150); });
+
+async function loadLibrary() {
+  const [s, albums] = await Promise.all([api("/api/stats"), api("/api/albums")]);
+  state.albums = albums;
+  $("#stats").textContent = `${s.tracks} tracks · ${s.folders} folders · ${s.artists} artists · ${dur(s.duration)} · ${bytes(s.size)}`;
+  state.nd = await fetch("/api/navidrome").then(r => r.ok ? r.json() : null).catch(() => null);
+  if (state.view !== "ingest" && state.view !== "operations") render();
+  await loadIngest();
+  if (state.view === "operations") await refreshOpsPane();
+}
+
+// --- ingest tab ------------------------------------------------------------------
+
+async function loadIngest() {
+  try {
+    const r = await fetch("/api/ingest");
+    state.ingest = r.ok ? await r.json() : null;  // null: an older server without ingestion tracking
+  } catch { state.ingest = null; }
+  const n = state.ingest ? state.ingest.not_ingested.length + state.ingest.unprocessed.length : 0;
+  $("#ingest-count").textContent = n || "";
+  if (state.view === "ingest") renderIngest();
+}
+
+function renderIngest() {
+  const d = state.ingest;
+  if (!d) return $("#main").innerHTML = `<div class="empty">Ingestion tracking needs the updated server: restart it with <code>.venv/bin/python app.py</code>.</div>`;
+  if ($("#ingest-progress") && !$("#ingest-progress").hidden) return;  // a scan is drawing progress; redraw after it
+  const q = state.q.toLowerCase(), hit = (...xs) => !q || xs.join(" ").toLowerCase().includes(q);
+  const notIn = d.not_ingested.filter(f => hit(f.path)), todo = d.unprocessed.filter(t => hit(t.path, t.title, t.artist, t.album));
+  const card = (n, label, hot) => `<div class="card ${hot && n ? "attention" : ""}"><b>${n}</b><span>${label}</span></div>`;
+  $("#main").innerHTML = `<div class="ingest">
+    <div class="cards">
+      ${card(d.not_ingested.length, "files on disk, not in the catalog", true)}
+      ${card(d.unprocessed.length, "songs catalogued but not processed", true)}
+      ${card(d.changed.length, "changed on disk since the last scan", true)}
+      ${card(d.downloading.length, "still downloading (.part)")}
+      ${d.mixed ? card(d.mixed.length, "albums split across MusicBrainz editions", true) : ""}
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="run-scan">Scan now</button>
+      <label><input type="checkbox" id="scan-full"> Re-read every file</label>
+      <span class="muted">Last scan: ${d.last_scan ? esc(d.last_scan.replace("T", " ")) : "never"}</span>
+      <span class="spacer"></span>
+      ${d.unprocessed.length ? `<button class="btn" id="ingest-cleanup">Process with the cleanup…</button>` : ""}
+    </div>
+    <div class="progress" id="ingest-progress" data-ops="scan navidrome" hidden>
+      <div class="track" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="ingest-msg"></p>
+    ${navidromeHtml()}
+    <h3>Not ingested (${notIn.length})</h3>
+    <p class="muted">Audio files in your library folder that the catalog doesn't know yet. <b>Scan now</b> adds them.</p>
+    ${notIn.length ? `<div class="tablewrap"><table><thead><tr><th>File</th><th class="num">Size</th></tr></thead><tbody>
+      ${notIn.map(f => `<tr><td class="path">${esc(f.path)}</td><td class="num">${f.size ? bytes(f.size) : ""}</td></tr>`).join("")}
+    </tbody></table></div>` : `<p class="muted">Nothing: every audio file is catalogued.</p>`}
+    <h3>Not processed (${todo.length})</h3>
+    <p class="muted">Catalogued, but not yet where the cleanup would put them. Click a song for its details.</p>
+    ${todo.length ? `<div class="tablewrap"><table><thead><tr><th>Song</th><th>Now at</th><th>Belongs at</th></tr></thead><tbody>
+      ${todo.map(t => `<tr data-id="${t.id}"><td class="wrap">${esc(t.title || "")}<br><span class="muted">${esc(t.artist || "")}</span></td>
+        <td class="path">${esc(t.path)}</td><td class="path">${esc(t.clean_path || "")}</td></tr>`).join("")}
+    </tbody></table></div>` : `<p class="muted">Nothing: every catalogued song is processed.</p>`}
+    ${d.mixed?.length ? `<h3>Needs attention (${d.mixed.length})</h3>
+      <p class="muted">Albums whose songs point at different editions of a release, usually because they were put together from several downloads.
+        Scrape Details has a fix ready for the ones linked to a release it knows; the others need “Look up albums”.</p>
+      <ul class="mb-list">${d.mixed.map(m => `<li>${esc(m.album || m.folder)}: ${m.editions.map(e => `${e.count} song${e.count === 1 ? "" : "s"} ${!e.id ? "with no MusicBrainz data, filed apart" : "on " + (e.title ? esc(e.title) + (e.date ? " (" + esc(e.date) + ")" : "") : "another edition")}`).join(", ")}</li>`).join("")}</ul>
+      <p><button class="btn" id="ingest-mb">Open Scrape Details</button></p>` : ""}
+    ${d.downloading.length ? `<h3>Downloading (${d.downloading.length})</h3><ul class="mb-list">${d.downloading.map(p => `<li class="path">${esc(p)}</li>`).join("")}</ul>` : ""}
+    ${d.gone.length ? `<h3>Gone (${d.gone.length})</h3><p class="muted">Catalogued, but the file is no longer there. A scan removes them.</p>
+      <ul class="mb-list">${d.gone.map(p => `<li class="path">${esc(p)}</li>`).join("")}</ul>` : ""}
+  </div>`;
+}
+
+function navidromeHtml() {
+  const n = state.nd;
+  if (!n) return "";
+  if (!n.configured) return `<h3>Navidrome</h3><p class="muted">Not set up. Add NAVIDROME_URL, NAVIDROME_USER and NAVIDROME_PASSWORD to .env to play
+    through Navidrome (and in Subsonic apps); see documentation/navidrome-setup.md. Without it, songs in browser-friendly formats still play straight from disk.</p>`;
+  const when = n.linked_at ? n.linked_at.replace("T", " ") : "never";
+  return `<h3>Navidrome</h3>
+    <div class="cards">
+      <div class="card ${n.reachable ? "" : "attention"}"><b>${n.reachable ? "Running" : "Not answering"}</b><span>${n.reachable ? `Navidrome ${esc((n.version || "").split(" ")[0])}${n.scan?.scanning ? " · scanning" : ""}` : esc(n.error || "")}</span></div>
+      <div class="card ${n.linked < n.songs ? "attention" : ""}"><b>${n.linked} / ${n.songs}</b><span>songs linked for playback</span></div>
+    </div>
+    <div class="actions"><button class="btn" id="nd-sync">Sync with Navidrome</button>
+      <span class="muted">Last linked: ${esc(when)}${n.syncing ? " · syncing in the background…" : ""}. Muse asks Navidrome to rescan after every change.</span>
+      ${n.public_url ? `<a class="btn link" href="${esc(n.public_url)}" target="_blank" rel="noopener">Open Navidrome ↗</a>` : ""}</div>`;
+}
+
+document.addEventListener("click", e => {
+  if (e.target.id === "run-scan") runJob("ingest", "/api/scan", { full: $("#scan-full").checked });
+  if (e.target.id === "ingest-cleanup") goOps("cleanup");
+  if (e.target.id === "ingest-mb") goOps("scrape");
+  if (e.target.id === "nd-sync") runJob("ingest", "/api/navidrome/sync", {});
+});
+
+// --- player ----------------------------------------------------------------------
+
+const BROWSER_CODECS = ["flac", "mp3", "vorbis", "opus", "aac", "wav"];
+const canPlay = t => !!t.navidrome_id || BROWSER_CODECS.includes(t.codec) || (t.codec || "").startsWith("pcm_");
+const player = { queue: [], i: 0 };
+
+function playQueue(list, i) {
+  if (!list.length) return;
+  player.queue = list;
+  playAt(i);
+}
+
+function playAt(i) {
+  if (i < 0 || i >= player.queue.length) return;
+  player.i = i;
+  const t = player.queue[i], audio = $("#audio");
+  audio.src = `/stream/${t.id}`;
+  audio.play().catch(() => {});  // autoplay refusals: the controls are there to press play
+  $("#player").classList.add("on");
+  document.body.classList.add("playing");
+  $("#player-art").src = `/cover/${t.id}`;
+  loadLyrics(t);
+  $("#player-title").textContent = t.title || t.filename;
+  $("#player-sub").textContent = [t.artist, t.album].filter(Boolean).join(" — ") + (player.queue.length > 1 ? ` · ${i + 1} of ${player.queue.length}` : "");
+  $("#player-prev").disabled = i === 0;
+  $("#player-next").disabled = i === player.queue.length - 1;
+}
+
+$("#audio").addEventListener("ended", () => playAt(player.i + 1));
+
+// Lyrics for the playing song: synced ones follow the music (click a line to jump there), plain ones just show.
+const lyricsView = { trackId: null, lines: [], on: false, current: -1 };
+
+async function loadLyrics(track) {
+  lyricsView.trackId = track.id; lyricsView.lines = []; lyricsView.current = -1;
+  const panel = $("#lyrics-panel");
+  let l = { kind: null };
+  try { const r = await fetch(`/api/lyrics/${track.id}`); if (r.ok) l = await r.json(); } catch {}
+  if (lyricsView.trackId !== track.id) return;  // skipped on meanwhile
+  if (l.kind === "synced") {
+    lyricsView.lines = l.lines;
+    panel.innerHTML = l.lines.map(([t, line], i) => `<p data-i="${i}" data-t="${t}">${esc(line) || "♪"}</p>`).join("");
+  } else if (l.kind === "plain") {
+    panel.innerHTML = `<pre>${esc(l.text)}</pre>`;
+  } else {
+    panel.innerHTML = `<p>No lyrics for this song yet. Operations → Lyrics can look them up.</p>`;
+  }
+  $("#player-lyrics").title = l.kind ? `Lyrics (${l.kind})` : "Lyrics (none yet)";
+}
+
+$("#audio").addEventListener("timeupdate", () => {
+  if (!lyricsView.on || !lyricsView.lines.length) return;
+  const t = $("#audio").currentTime;
+  let i = lyricsView.lines.findIndex(([at]) => at > t + 0.15) - 1;
+  if (i === -2) i = lyricsView.lines.length - 1;
+  if (i === lyricsView.current) return;
+  lyricsView.current = i;
+  document.querySelectorAll("#lyrics-panel p.now").forEach(p => p.classList.remove("now"));
+  const line = document.querySelector(`#lyrics-panel p[data-i="${i}"]`);
+  if (line) { line.classList.add("now"); line.scrollIntoView({ block: "center", behavior: "smooth" }); }
+});
+$("#lyrics-panel").addEventListener("click", e => {
+  const line = e.target.closest("p[data-t]");
+  if (line) $("#audio").currentTime = +line.dataset.t;
+});
+$("#player-lyrics").addEventListener("click", () => {
+  lyricsView.on = !lyricsView.on;
+  $("#lyrics-panel").classList.toggle("on", lyricsView.on);
+  $("#player-lyrics").classList.toggle("on", lyricsView.on);
+  $("#player-lyrics").setAttribute("aria-pressed", lyricsView.on);
+});
+$("#audio").addEventListener("error", () => {
+  if (!$("#audio").src) return;
+  $("#player-sub").innerHTML = `<span class="err">Couldn't play this song${player.i < player.queue.length - 1 ? ", skipping" : ""}.</span>`;
+  setTimeout(() => playAt(player.i + 1), 1500);
+});
+$("#player-prev").addEventListener("click", () => playAt(player.i - 1));
+$("#player-next").addEventListener("click", () => playAt(player.i + 1));
+$("#player-close").addEventListener("click", () => {
+  const audio = $("#audio");
+  audio.pause(); audio.removeAttribute("src"); audio.load();
+  $("#player").classList.remove("on");
+  document.body.classList.remove("playing");
+  lyricsView.on = false; $("#lyrics-panel").classList.remove("on"); $("#player-lyrics").classList.remove("on");
+});
+
+// --- operations tab: album art ---------------------------------------------------
+
+const art = { albums: null, choices: {}, all: false, busy: false, error: null };
+const GOOD_GUESS = 15;      // candidates ranked this well are pre-selected
+const LOW_RES = 500;        // px: smaller covers get a warning
+const MAX_PICK = 25e6;      // bytes: largest image accepted from the drive
+
+async function loadHousekeeping() {
+  try {
+    const r = await fetch("/api/housekeeping");
+    art.house = r.ok ? await r.json() : null;
+  } catch { art.house = null; }
+}
+
+function housekeepingHtml() {
+  const h = art.house;
+  if (!h) return "";
+  const t = h.totals, mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(1) + " MB";
+  const day = d => d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "never";
+  const live = h.journals.filter(j => !j.undone && j.for_library);
+  const latest = live[live.length - 1];
+  return `<h2>Undo history</h2>
+    <p class="muted">${h.days ? `Changes stay undoable for ${h.days} days. After that their undo record expires, together with the duplicates they moved to <code>.muse-trash/</code>, which are then deleted for good.`
+      : "Undo history never expires (MUSE_UNDO_DAYS=0)."} Set <code>MUSE_UNDO_DAYS</code> in .env to change this.</p>
+    <div class="cards">
+      <div class="card"><b>${t.journals}</b><span>changes you can undo · ${mb(t.journal_bytes)}</span></div>
+      <div class="card ${t.trash_bytes > 5e8 ? "attention" : ""}"><b>${mb(t.trash_bytes)}</b><span>discarded duplicates (${t.trash_files} files)</span></div>
+      <div class="card"><b>${mb(t.cache_bytes)}</b><span>cached cover images</span></div>
+      <div class="card"><b>${day(t.next_expiry)}</b><span>next expiry</span></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="house-undo" ${latest ? "" : "disabled"}>Undo the most recent change</button>
+      <span class="muted" id="house-msg" role="status">${latest ? `Most recent: ${esc(latest.kind)} on ${esc(latest.created.replace("T", " "))}, ${latest.entries} entries. Changes are undone newest first.` : "Nothing to undo."}</span>
+    </div>
+    <div class="progress" id="house-progress" data-ops="undo housekeeping" hidden>
+      <div class="track" role="progressbar" aria-label="Undo progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    ${live.length || h.trash.length ? `<details class="crow"><summary>What's kept and when it expires</summary>
+      <ul class="mb-list">${live.map(j => `<li>${esc(j.created.replace("T", " "))}: ${esc(j.kind)}, ${j.entries} entries, ${mb(j.bytes)}, expires ${day(j.expires)}</li>`).join("")}
+      ${h.trash.map(x => `<li>Trash ${esc(x.name)}: ${x.files} files, ${mb(x.bytes)}, deleted ${day(x.expires)}</li>`).join("")}</ul></details>` : ""}`;
+}
+
+// --- operations tab: lyrics ------------------------------------------------------
+
+const lyr = { data: null, picks: {}, busy: false };
+
+async function loadLyricsOp() {
+  try { const r = await fetch("/api/lyrics"); lyr.data = r.ok ? await r.json() : null; } catch { lyr.data = null; }
+  if (lyr.data) for (const c of lyr.data.candidates)
+    if (lyr.picks[c.track_id] === undefined) lyr.picks[c.track_id] = c.kind === "synced" || (c.kind === "plain" && !c.current);
+  if (state.view === "operations" && $("#lyrics-op")) $("#lyrics-op").innerHTML = lyricsOpHtml();
+}
+
+function lyricsOpHtml() {
+  const d = lyr.data;
+  if (!d) return "";
+  const c = d.coverage, usable = d.candidates.filter(x => x.kind === "synced" || x.kind === "plain");
+  const misses = d.candidates.filter(x => x.kind === "none").length, instrumental = d.candidates.filter(x => x.kind === "instrumental").length;
+  const byAlbum = {};
+  for (const x of usable) (byAlbum[x.folder] ||= []).push(x);
+  const picked = usable.filter(x => lyr.picks[x.track_id]).length;
+  const label = { synced: ["ok", "Synced"], plain: ["", "Plain"] };
+  return `<h2 style="margin-top:24px">Lyrics</h2>
+    <p class="muted">Synced lyrics follow the music in the player (♪ button) and in Navidrome apps. Missing ones come from
+      <a href="https://lrclib.net" target="_blank" rel="noopener">LRCLIB</a>, matched on artist, title, album and length (so a live or radio edit
+      doesn't get the album version's lyrics). They're saved next to each song as <code>.lrc</code> (synced) or <code>.txt</code> (plain); the audio files aren't touched.</p>
+    <div class="cards">
+      <div class="card"><b>${c.synced}</b><span>songs with synced lyrics</span></div>
+      <div class="card"><b>${c.plain}</b><span>with plain lyrics</span></div>
+      <div class="card ${c.missing ? "attention" : ""}"><b>${c.missing}</b><span>without lyrics</span></div>
+      ${d.orphans.length ? `<div class="card attention"><b>${d.orphans.length}</b><span>lyrics files without a song</span></div>` : ""}
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="lyr-find">Find lyrics</button>
+      <label><input type="checkbox" id="lyr-upgrade"> Also replace plain lyrics with synced ones</label>
+      <label><input type="checkbox" id="lyr-refresh"> Ask again for songs already looked up</label>
+    </div>
+    <div class="progress" id="lyr-progress" data-ops="lyrics" hidden>
+      <div class="track" role="progressbar" aria-label="Lyrics progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="lyr-msg" role="status"></p>
+    ${usable.length ? `<p class="muted">Found for ${usable.length} songs${misses ? ` · ${misses} not on LRCLIB` : ""}${instrumental ? ` · ${instrumental} instrumental` : ""}. Untick any you don't want.</p>
+      ${Object.entries(byAlbum).map(([folder, songs]) => `<div class="crow"><details><summary><span class="sum-main">${esc(songs[0].album || folder)}</span>
+        <span class="badge">${esc(songs[0].artist || "")}</span><span class="badge">${songs.length} song${songs.length === 1 ? "" : "s"}</span></summary>
+        ${songs.map(x => `<div class="lyrics-row"><input type="checkbox" class="lyr-pick" data-id="${x.track_id}" ${lyr.picks[x.track_id] ? "checked" : ""} aria-label="Save lyrics for ${esc(x.title)}">
+          <details><summary>${x.track_no ? x.track_no + ". " : ""}${esc(x.title)} <span class="badge ${label[x.kind][0]}">${label[x.kind][1]}</span>
+            ${x.current === "plain" ? `<span class="badge">replaces plain lyrics</span>` : ""}<span class="badge">${esc(x.how)}</span></summary>
+            <pre>${esc(x.preview)}</pre></details></div>`).join("")}
+      </details></div>`).join("")}
+      <div class="actions" style="margin-top:12px"><button class="btn primary" id="lyr-apply" ${picked ? "" : "disabled"}>Save lyrics for ${picked} song${picked === 1 ? "" : "s"}</button></div>`
+      : misses ? `<p class="muted">Nothing new found (${misses} songs aren't on LRCLIB).</p>` : ""}
+    ${d.orphans.length ? `<h3>Lyrics files without a song (${d.orphans.length})</h3>
+      <p class="muted">Usually left behind when songs were renamed or duplicates removed.</p>
+      ${d.orphans.map((o, i) => `<div class="lyrics-row"><span></span><div><code>${esc(o.path)}</code>
+        <div class="muted">${esc(o.reason)}</div>
+        <select class="lyr-orphan" data-path="${esc(o.path)}" aria-label="What to do with ${esc(o.path)}">
+          ${o.action === "reattach" ? `<option value="reattach" selected>Attach to “${esc(o.song)}”</option>` : ""}
+          <option value="trash" ${o.action === "trash" ? "selected" : ""}>Move to .muse-trash</option>
+          <option value="leave">Leave it</option></select></div></div>`).join("")}
+      <div class="actions" style="margin-top:12px"><button class="btn" id="lyr-orphans">Apply to these files</button></div>` : ""}`;
+}
+
+$("#main").addEventListener("change", e => {
+  if (e.target.classList.contains("lyr-pick")) {
+    lyr.picks[e.target.dataset.id] = e.target.checked;
+    const n = Object.values(lyr.picks).filter(Boolean).length, btn = $("#lyr-apply");
+    if (btn) { btn.textContent = `Save lyrics for ${n} song${n === 1 ? "" : "s"}`; btn.disabled = !n; }
+  }
+});
+$("#main").addEventListener("click", e => {
+  if (state.view !== "operations" || lyr.busy) return;
+  if (e.target.id === "lyr-find") runJob("lyrics", "/api/lyrics/find", { upgrade: $("#lyr-upgrade").checked, refresh: $("#lyr-refresh").checked });
+  if (e.target.id === "lyr-apply") {
+    const ids = Object.entries(lyr.picks).filter(([, v]) => v).map(([k]) => +k);
+    if (!confirm(`Save lyrics files next to ${ids.length} songs? Undo history can remove them again.`)) return;
+    runJob("lyrics", "/api/lyrics/apply", { track_ids: ids });
+  }
+  if (e.target.id === "lyr-orphans") {
+    const decisions = Object.fromEntries([...document.querySelectorAll(".lyr-orphan")].map(s => [s.dataset.path, s.value]));
+    runJob("lyrics", "/api/lyrics/orphans", { decisions });
+  }
+});
+
+$("#main").addEventListener("click", e => {
+  if (e.target.id !== "house-undo" || PANES.history.state.busy) return;
+  if (!confirm("Undo the most recent change? Tags, file locations, artwork and lyrics files go back to how they were before it.")) return;
+  runJob("history", "/api/cleanup/undo", {});
+});
+
+// --- operations tab: merging albums by hand ---------------------------------------------
+
+const merge = { data: null, selected: new Set(), target: null, filter: "", preview: null, move: true, busy: false };
+
+async function loadMerge() {
+  const pane = $("#ops-pane");
+  if (pane && !merge.data) pane.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    const r = await fetch("/api/merge");
+    if (!r.ok) throw new Error("Merging needs the updated server: restart it with .venv/bin/python app.py");
+    merge.data = await r.json();
+    const keys = new Set(merge.data.albums.map(a => a.key));
+    merge.selected = new Set([...merge.selected].filter(k => keys.has(k)));  // albums merged away are gone
+    if (!merge.selected.has(merge.target)) merge.target = null;
+  } catch (err) { if (pane) pane.innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
+  renderMergePane();
+}
+
+const albumLabel = a => `${esc(a.album || "Unknown album")} <span class="muted">· ${esc(a.artist || "")}${a.year ? " · " + a.year : ""}${a.songs != null ? ` · ${a.songs} song${a.songs === 1 ? "" : "s"}` : ""}</span>`;
+
+function renderMergePane() {
+  const pane = $("#ops-pane");
+  if (!pane || state.opsTab !== "merge" || !merge.data) return;
+  const { albums, suggestions } = merge.data, byKey = Object.fromEntries(albums.map(a => [a.key, a]));
+  const f = merge.filter.toLowerCase();
+  const shown = albums.filter(a => merge.selected.has(a.key) || (f && [a.album, a.artist, a.folder].join(" ").toLowerCase().includes(f))).slice(0, 60);
+  const chosen = [...merge.selected].map(k => byKey[k]).filter(Boolean);
+  const pv = merge.preview;
+  pane.innerHTML = `<div>
+    <h2>Merge albums</h2>
+    <p class="muted">When one album shows up as several (different editions, a song tagged with another album artist, a name variant), merge them here:
+      pick the albums, choose whose details to keep, check the preview, then merge. Every song takes that album's name, album artist, dates and
+      MusicBrainz identity; titles and track numbers stay as they are. One Undo reverses the whole merge.</p>
+    ${suggestions.length ? `<h3>Suggestions (${suggestions.length})</h3>
+      ${suggestions.map((sg, i) => `<div class="lyrics-row"><span></span><div>
+        ${sg.albums.map(a => `<div>${albumLabel(a)}<br><code class="muted">${esc(a.folder)}</code></div>`).join("")}
+        <div class="muted">Why: ${esc(sg.reason)}</div>
+        <div class="actions" style="margin-top:6px"><button class="btn" data-merge-suggest="${i}">Review this</button>
+          <button class="btn link" data-merge-ignore="${i}" title="These albums are meant to be separate: don't suggest them again">This is fine, ignore</button></div></div></div>`).join("")}`
+      : `<p class="muted">No suggestions: nothing looks split right now. You can still pick albums yourself below.</p>`}
+    ${merge.data.ignored && merge.data.ignored.length ? `<details style="margin:8px 0"><summary class="muted">Ignored suggestions (${merge.data.ignored.length})</summary>
+      ${merge.data.ignored.map((ig, i) => `<div class="lyrics-row"><span></span><div>
+        ${ig.albums.map(a => `<div>${albumLabel(a)}<br><code class="muted">${esc(a.folder || "")}</code></div>`).join("")}
+        <div class="muted">Ignored ${esc((ig.ignored_at || "").replace("T", " "))}${ig.reason ? ` · was suggested because ${esc(ig.reason)}` : ""}</div>
+        <button class="btn link" data-merge-unignore="${i}">Suggest again</button></div></div>`).join("")}</details>` : ""}
+    <h3>Pick albums</h3>
+    <div class="actions"><input type="search" id="merge-filter" placeholder="Search albums by name, artist or folder…" value="${esc(merge.filter)}"
+      style="flex:1;max-width:420px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit"></div>
+    ${shown.length ? shown.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="merge-pick" data-key="${esc(a.key)}" ${merge.selected.has(a.key) ? "checked" : ""}>
+        <div>${albumLabel(a)}${a.musicbrainz ? ` <span class="badge ok">MusicBrainz</span>` : ""}<br><code class="muted">${esc(a.folder)}</code></div></label>`).join("")
+      : `<p class="muted">${f ? "No album matches." : "Type to search, or start from a suggestion."}</p>`}
+    ${chosen.length ? `<h3>Keep whose details? (${chosen.length} albums picked)</h3>
+      ${chosen.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="radio" name="merge-target" value="${esc(a.key)}" ${merge.target === a.key ? "checked" : ""}>
+        <div>${albumLabel(a)}${a.musicbrainz ? ` <span class="badge ok">MusicBrainz</span>` : ""}</div></label>`).join("")}
+      <div class="actions" style="margin-top:10px">
+        <label><input type="checkbox" id="merge-move" ${merge.move ? "checked" : ""}> Also move the songs into one folder</label>
+        <button class="btn" id="merge-preview" ${chosen.length > 1 && merge.target ? "" : "disabled"}>Preview</button>
+        <span class="muted">${chosen.length < 2 ? "Pick at least two albums." : merge.target ? "" : "Choose the album whose details to keep."}</span>
+      </div>` : ""}
+    <div class="progress" id="merge-progress" data-ops="merge" hidden>
+      <div class="track" role="progressbar" aria-label="Merge progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="merge-msg" role="status"></p>
+    ${pv ? `<h3>Preview</h3>
+      <p>All songs become <b>${esc(pv.target.album)}</b> by <b>${esc(pv.target.artist || "?")}</b>${pv.target.date ? ` (${esc(pv.target.date)})` : ""}
+        ${pv.target.musicbrainz ? `<span class="badge ok">MusicBrainz release kept</span>` : `<span class="badge">no MusicBrainz release: other editions' ids are cleared</span>`}</p>
+      ${pv.warnings.map(w => `<p class="note">${esc(w)}</p>`).join("")}
+      ${pv.songs.filter(x => x.changes.length).map(x => `<div class="crow"><details><summary>${esc(x.title || x.path)} <span class="badge">${x.changes.length} change${x.changes.length === 1 ? "" : "s"}</span>
+        <span class="muted">from “${esc(x.album || "")}”</span></summary>
+        <table class="diff">${x.changes.map(c => `<tr><td>${esc(c.field)}</td><td><span class="old">${val(c.old)}</span><br><span class="new">${val(c.new)}</span></td></tr>`).join("")}</table>
+        </details></div>`).join("") || `<p class="muted">The tags already agree; merging would only move files.</p>`}
+      <div class="actions" style="margin-top:12px"><button class="btn primary" id="merge-apply">Merge ${chosen.length} albums</button>
+        <span class="muted">${pv.songs.filter(x => x.changes.length).length} songs retagged${merge.move ? ", then moved into one folder" : ""}.</span></div>` : ""}
+  </div>`;
+}
+
+async function runMergePreview() {
+  $("#merge-msg").textContent = "Reading tags…";
+  try {
+    merge.preview = await post("/api/merge/preview", { keys: [...merge.selected], target: merge.target });
+    renderMergePane();
+  } catch (err) { $("#merge-msg").textContent = err.message; }
+}
+
+$("#main").addEventListener("input", e => {
+  if (e.target.id !== "merge-filter") return;
+  merge.filter = e.target.value;
+  const at = e.target.selectionStart;
+  renderMergePane();
+  const box = $("#merge-filter"); box.focus(); box.setSelectionRange(at, at);
+});
+$("#main").addEventListener("change", e => {
+  if (state.view !== "operations" || state.opsTab !== "merge") return;
+  const el = e.target;
+  if (el.classList.contains("merge-pick")) {
+    el.checked ? merge.selected.add(el.dataset.key) : merge.selected.delete(el.dataset.key);
+    if (!merge.selected.has(merge.target)) merge.target = null;
+    merge.preview = null;
+    renderMergePane();
+  }
+  if (el.name === "merge-target") { merge.target = el.value; merge.preview = null; renderMergePane(); }
+  if (el.id === "merge-move") { merge.move = el.checked; renderMergePane(); }
+});
+$("#main").addEventListener("click", async e => {
+  if (state.view !== "operations" || state.opsTab !== "merge" || merge.busy) return;
+  const ignore = e.target.closest("[data-merge-ignore], [data-merge-unignore]");
+  if (ignore) {
+    const undo = "mergeUnignore" in ignore.dataset;
+    const item = undo ? merge.data.ignored[+ignore.dataset.mergeUnignore] : merge.data.suggestions[+ignore.dataset.mergeIgnore];
+    ignore.disabled = true;
+    try {
+      await post("/api/merge/ignore", { keys: item.keys, reason: item.reason, undo });
+      await loadMerge();
+    } catch (err) { ignore.disabled = false; alert(err.message); }
+    return;
+  }
+  const suggest = e.target.closest("[data-merge-suggest]");
+  if (suggest) {
+    const sg = merge.data.suggestions[+suggest.dataset.mergeSuggest];
+    merge.selected = new Set(sg.keys);
+    // keep the album with MusicBrainz data and the most songs by default
+    merge.target = [...sg.albums].sort((a, b) => (b.musicbrainz - a.musicbrainz) || (b.songs - a.songs))[0].key;
+    merge.preview = null;
+    renderMergePane();
+    return runMergePreview();
+  }
+  if (e.target.id === "merge-preview") return runMergePreview();
+  if (e.target.id === "merge-apply") {
+    if (!confirm(`Merge ${merge.selected.size} albums into “${merge.preview.target.album}”? Undo history can reverse it.`)) return;
+    runJob("merge", "/api/merge/apply", { keys: [...merge.selected], target: merge.target, move: merge.move },
+           { onSuccess: () => { merge.selected = new Set(); merge.target = null; merge.preview = null; } });
+  }
+});
+
+// --- appearance: accent colours, saved to .env ------------------------------------------
+
+const COLOR_NAMES = {
+  accent: ["Accent", "Buttons, highlights, the active tab, progress bars"],
+  link: ["Links", "Hyperlinks"],
+  ok: ["Success", "Complete, matched, better values, added text"],
+  warn: ["Warning", "Incomplete, check this, name clashes"],
+  danger: ["Danger", "Errors, poor matches, removed text"],
+};
+const darkMode = () => matchMedia("(prefers-color-scheme: dark)").matches;
+const appearance = { colors: null, defaults: null };
+
+function previewColors() {  // show the picked colours on the page right away (inline overrides of /theme.css)
+  for (const [name, pair] of Object.entries(appearance.colors)) document.documentElement.style.setProperty(`--${name}`, pair[darkMode() ? 1 : 0]);
+}
+
+function renderAppearance() {
+  $("#appearance-rows").innerHTML = Object.entries(COLOR_NAMES).map(([name, [label, what]]) => `<tr>
+    <td><b>${label}</b><br><span class="muted">${what}</span></td>
+    ${[0, 1].map(i => `<td><input type="color" data-name="${name}" data-i="${i}" value="${appearance.colors[name][i]}"
+      aria-label="${label}, ${i ? "dark" : "light"} mode"></td>`).join("")}</tr>`).join("");
+}
+
+async function openAppearance() {
+  const r = await fetch("/api/appearance");
+  if (!r.ok) return alert("Appearance needs the updated server: restart it with .venv/bin/python app.py");
+  const d = await r.json();
+  appearance.colors = JSON.parse(JSON.stringify(d.colors));
+  appearance.defaults = d.defaults;
+  $("#appearance-msg").textContent = "";
+  renderAppearance();
+  $("#appearance").classList.add("open");
+}
+
+function closeAppearance(saved) {
+  $("#appearance").classList.remove("open");
+  for (const name of Object.keys(COLOR_NAMES)) document.documentElement.style.removeProperty(`--${name}`);
+  if (saved) $('link[href^="/theme.css"]').href = `/theme.css?v=${Date.now()}`;  // load the saved theme
+}
+
+$("#open-appearance").addEventListener("click", openAppearance);
+$("#appearance").addEventListener("input", e => {
+  const el = e.target;
+  if (el.type !== "color") return;
+  appearance.colors[el.dataset.name][+el.dataset.i] = el.value;
+  previewColors();
+});
+$("#appearance").addEventListener("click", async e => {
+  const id = e.target.id;
+  if (e.target === $("#appearance") || id === "appearance-cancel") return closeAppearance(false);
+  if (id === "appearance-reset") {
+    appearance.colors = JSON.parse(JSON.stringify(appearance.defaults));
+    renderAppearance(); previewColors();
+    $("#appearance-msg").textContent = "Defaults restored. Save to keep them.";
+  }
+  if (id === "appearance-save") {
+    try {
+      await post("/api/appearance", { colors: appearance.colors });
+      closeAppearance(true);
+    } catch (err) { $("#appearance-msg").textContent = err.message; }
+  }
+});
+
+// --- operations tab: process steps and sub-tabs ------------------------------------
+
+const OPS_TABS = [["scrape", "Scrape Details"], ["cleanup", "Clean up"], ["merge", "Merge albums"], ["art", "Album art"], ["lyrics", "Lyrics"],
+                  ["history", "Undo history"]];
+
+function goOps(tab) {
+  state.view = "operations"; state.folder = null; state.opsTab = tab;
+  try { localStorage.setItem("muse.opsTab", tab); } catch {}
+  render();
+}
+
+// Clean up and Scrape Details are reused in place; put them back before their sub-tab's content is replaced.
+function dockPanels() {
+  for (const id of ["#cleanup", "#mb"]) {
+    const el = $(id);
+    if (el.parentElement !== document.body) { el.classList.remove("inline", "open"); document.body.appendChild(el); }
+  }
+}
+
+function workflowHtml() {
+  const ing = state.ingest, waiting = ing ? ing.not_ingested.length : 0;
+  const step = (sub, title, text) => `<li><button ${sub === "ingest" ? 'data-goto="ingest"' : `data-sub="${sub}"`} class="${state.opsTab === sub ? "on" : ""}">
+    <b>${title}</b><span>${text}</span></button></li>`;
+  return `<section class="workflow" aria-labelledby="wf-title">
+    <h2 id="wf-title">Processing new songs</h2>
+    <p class="muted">When new music lands in your library, go through these steps in order. Every step shows what it will change before it does it, and Undo history can reverse it.</p>
+    <ol class="steps">
+      ${step("ingest", "Scan", `Ingest → <i>Scan now</i> adds the new files to the catalog${waiting ? ` (${waiting} waiting)` : ""}. Let downloads (.part) finish first.`)}
+      ${step("scrape", "Scrape Details", "Look the albums up on MusicBrainz and apply the matches: proper titles, artists, dates and IDs, missing songs flagged, editions kept together.")}
+      ${step("cleanup", "Clean up", "Keep the best copy of any duplicates, then fix tags and file names: files move into Artist/Year - Album.")}
+      ${step("art", "Album art", "Give albums without a cover one: from the folder, the songs, the Cover Art Archive or your drive.")}
+      ${step("lyrics", "Lyrics", "Fill in missing lyrics (synced where possible) and tidy lyrics files left behind.")}
+    </ol>
+    <p class="why"><b>Why this order:</b> Scrape Details can rename an album or its artist, and Clean up builds folder names from those tags, so scraping first means
+      files move once, not twice (each move can make phone apps download a song again). Art and lyrics go last: they're found by the corrected names
+      and saved where the files end up. Navidrome picks every change up by itself; sync your phone app afterwards.</p>
+    <p class="why"><b>An album still shows up as several?</b> <a href="#" data-sub="merge">Merge albums</a> joins them by hand.</p>
+  </section>`;
+}
+
+function renderOperations() {
+  dockPanels();
+  $("#main").innerHTML = `<div class="ops">${workflowHtml()}
+    <div class="subtabs" role="tablist" aria-label="Operations">${OPS_TABS.map(([k, label]) =>
+      `<button role="tab" data-sub="${k}" aria-selected="${state.opsTab === k}" class="${state.opsTab === k ? "on" : ""}">${label}</button>`).join("")}</div>
+    <div id="ops-pane" role="tabpanel"></div></div>`;
+  renderOpsPane();
+}
+
+function renderOpsPane() {
+  const pane = $("#ops-pane");
+  if (!pane) return;
+  if (state.opsTab === "scrape" || state.opsTab === "cleanup") {
+    const panel = $(state.opsTab === "scrape" ? "#mb" : "#cleanup");
+    pane.replaceChildren(panel);
+    panel.classList.add("inline");
+    return state.opsTab === "scrape" ? openMb() : openCleanup();
+  }
+  if (state.opsTab === "lyrics") { pane.innerHTML = `<div id="lyrics-op">${lyricsOpHtml()}</div>`; return loadLyricsOp(); }
+  if (state.opsTab === "merge") return loadMerge();
+  if (state.opsTab === "history") {
+    pane.innerHTML = `<div id="house">${housekeepingHtml() || '<div class="empty">Loading…</div>'}</div>`;
+    return loadHousekeeping().then(() => { if ($("#house")) $("#house").innerHTML = housekeepingHtml(); });
+  }
+  return renderArtPane();
+}
+
+// After a job, refresh the visible pane's data (Clean up and Scrape Details reload themselves).
+async function refreshOpsPane() {
+  if (state.opsTab === "merge") return loadMerge();
+  if (state.opsTab === "art") return loadArt();
+  if (state.opsTab === "lyrics") return loadLyricsOp();
+  if (state.opsTab === "history") { await loadHousekeeping(); if ($("#house")) $("#house").innerHTML = housekeepingHtml(); }
+}
+
+async function loadArt() {
+  try {
+    const r = await fetch("/api/art" + (art.all ? "?all=1" : ""));
+    if (!r.ok) throw new Error("The Operations tab needs the updated server: restart it with .venv/bin/python app.py");
+    art.albums = (await r.json()).albums;
+    art.error = null;
+    for (const a of art.albums) {  // keep the user's picks; otherwise pre-select a confident guess
+      if (art.choices[a.key] !== undefined && (art.choices[a.key] === "" || a.candidates.some(c => c.sha === art.choices[a.key]))) continue;
+      const best = a.candidates[0];
+      art.choices[a.key] = best && best.rank <= GOOD_GUESS ? best.sha : "";
+    }
+  } catch (err) { art.error = err.message; }
+  // First visit: nothing searched yet, so look in the album folders and songs straight away (no network).
+  if (!art.error && !art.autoFound && art.albums.length && art.albums.every(a => !a.candidates.length) && state.view === "operations" && state.opsTab === "art") {
+    art.autoFound = true;
+    renderArtPane();
+    return runJob("art", "/api/art/find", { online: false, all: art.all });
+  }
+  if (state.view === "operations" && state.opsTab === "art") renderArtPane();
+}
+
+function renderArtPane() {
+  const pane = $("#ops-pane");
+  if (!pane) return;
+  if (!art.albums && !art.error) { pane.innerHTML = `<div class="empty">Loading…</div>`; return loadArt(); }
+  if ($("#art-progress") && !$("#art-progress").hidden) return;  // a job is drawing progress; redraw after it
+  if (art.error) return pane.innerHTML = `<div class="empty">${esc(art.error)}</div>`;
+  const q = state.q.toLowerCase();
+  const list = art.albums.filter(a => !q || [a.album, a.artist, a.folder].join(" ").toLowerCase().includes(q));
+  const missingSongs = art.albums.reduce((n, a) => n + a.lacking, 0);
+  pane.innerHTML = `<div>
+    <h2>Album art</h2>
+    <p class="muted">${art.all ? `${art.albums.length} albums.` : `${art.albums.length} album${art.albums.length === 1 ? "" : "s"} with songs lacking embedded artwork (${missingSongs} songs).`}
+      Find candidates, pick one cover per album (or choose an image from your drive), then embed it. Undo history can reverse it.</p>
+    <div class="actions">
+      <button class="btn primary" id="art-find">Find artwork</button>
+      <label><input type="checkbox" id="art-online" checked> Search online (Cover Art Archive, via MusicBrainz)</label>
+      <label><input type="checkbox" id="art-itunes"> Also search iTunes</label>
+      <label><input type="checkbox" id="art-all" ${art.all ? "checked" : ""}> Include albums that already have art</label>
+    </div>
+    <div class="progress" id="art-progress" data-ops="artwork" hidden>
+      <div class="track" role="progressbar" aria-label="Artwork progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="art-msg" role="status"></p>
+    ${list.length ? list.map(albumArtRow).join("") : `<div class="empty">${art.albums.length ? "No albums match the search." : "Every song has embedded artwork."}</div>`}
+    ${art.albums.length ? `<div class="applybar">
+      <label><input type="checkbox" id="art-save" checked> Also save it as cover.jpg in the album folder (if there's none)</label>
+      <label><input type="checkbox" id="art-replace"> Replace art songs already have</label>
+      <span class="spacer"></span>
+      <button class="btn primary" id="art-apply"></button>
+    </div>` : ""}
+  </div>`;
+  updateArtCount();
+}
+
+function albumArtRow(a) {
+  const i = art.albums.indexOf(a), chosen = art.choices[a.key] ?? "";
+  const cand = c => {
+    const warn = [Math.min(c.width, c.height) < LOW_RES && "Low resolution",
+                  Math.abs(c.width / c.height - 1) > 0.1 && "Not square"].filter(Boolean);
+    return `<label class="cand" title="${esc(c.label)}">
+      <input type="radio" name="art-${i}" value="${c.sha}" ${chosen === c.sha ? "checked" : ""}>
+      <div class="img"><img loading="lazy" src="/art/${c.sha}" alt="${esc(c.label)}"></div>
+      <div class="meta"><b>${c.width}×${c.height}</b> · ${Math.round(c.bytes / 1024)} KB<br>${esc(c.label)}
+        ${warn.map(w => `<br><span class="badge warn">${w}</span>`).join("")}</div>
+    </label>`;
+  };
+  return `<div class="art-album" data-i="${i}">
+    <div class="art-now">${a.cover_id ? `<img loading="lazy" src="/cover/${a.cover_id}" alt="Current cover">` : "No artwork"}</div>
+    <div>
+      <div class="t">${esc(a.album || "Unknown album")}</div>
+      <div class="s">${esc(a.artist || "")} · ${a.lacking ? `${a.lacking} of ${a.songs} songs without art` : `all ${a.songs} songs have art`}
+        ${a.applied ? ` · embedded from ${esc(a.applied.source)} on ${esc(a.applied.applied_at.slice(0, 10))}` : ""}</div>
+      <div class="cands">
+        <label class="cand none"><input type="radio" name="art-${i}" value="" ${chosen === "" ? "checked" : ""}>
+          <div class="img">Leave as is</div><div class="meta">${a.candidates.length ? "" : "Nothing found yet"}</div></label>
+        ${a.candidates.map(cand).join("")}
+        <label class="cand from-drive"><input type="file" accept="image/*" class="art-file" data-i="${i}" hidden>
+          <div class="img">+ Choose image…<br>or drop one here</div><div class="meta">From your drive</div></label>
+      </div>
+    </div>
+  </div>`;
+}
+
+function updateArtCount() {
+  const btn = $("#art-apply");
+  if (!btn) return;
+  const n = Object.entries(art.choices).filter(([k, v]) => v && art.albums.some(a => a.key === k)).length;
+  btn.textContent = n ? `Embed artwork for ${n} album${n === 1 ? "" : "s"}` : "Embed artwork";
+  btn.disabled = !n || art.busy;
+}
+
+async function uploadArt(i, file) {
+  const a = art.albums[i];
+  if (!file || !a) return;
+  if (!file.type.startsWith("image/")) return $("#art-msg").textContent = `${file.name} isn't an image.`;
+  if (file.size > MAX_PICK) return $("#art-msg").textContent = `${file.name} is larger than 25 MB.`;
+  $("#art-msg").textContent = `Adding ${file.name}…`;
+  const data = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = () => reject(new Error(`Couldn't read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+  try {
+    const r = await post("/api/art/upload", { key: a.key, name: file.name, data });
+    art.choices[a.key] = r.sha;  // what you just picked is what you want
+    await loadArt();
+    $("#art-msg").textContent = `Added ${file.name} (${r.width}×${r.height}) to ${a.album}.`;
+  } catch (err) { $("#art-msg").textContent = err.message; }
+}
+
+$("#main").addEventListener("change", e => {
+  if (state.view !== "operations") return;
+  const el = e.target;
+  if (el.matches(".cand input[type=radio]")) {
+    art.choices[art.albums[el.closest(".art-album").dataset.i].key] = el.value;
+    updateArtCount();
+  }
+  if (el.classList.contains("art-file")) uploadArt(+el.dataset.i, el.files[0]);
+  if (el.id === "art-all") { art.all = el.checked; art.albums = null; renderArtPane(); }
+});
+
+$("#main").addEventListener("click", async e => {
+  if (state.view !== "operations" || art.busy) return;
+  if (e.target.id === "art-find")
+    runJob("art", "/api/art/find", { online: $("#art-online").checked, itunes: $("#art-itunes").checked, all: art.all });
+  if (e.target.id === "art-apply") {
+    const choices = Object.fromEntries(Object.entries(art.choices).filter(([k, v]) => v && art.albums.some(a => a.key === k)));
+    const replace = $("#art-replace").checked, save_folder = $("#art-save").checked, n = Object.keys(choices).length;
+    if (!confirm(`Embed the chosen cover into the songs of ${n} album${n === 1 ? "" : "s"}` + (replace ? ", replacing art they already have" : "") +
+                 "? Undo history can reverse it.")) return;
+    runJob("art", "/api/art/apply", { choices, replace, save_folder });
+  }
+});
+
+// Drop an image onto an album to use it.
+$("#main").addEventListener("dragover", e => {
+  const row = state.view === "operations" && e.target.closest(".art-album");
+  if (!row) return;
+  e.preventDefault();
+  document.querySelectorAll(".art-album.dragging").forEach(r => r !== row && r.classList.remove("dragging"));
+  row.classList.add("dragging");
+});
+$("#main").addEventListener("dragleave", e => {
+  const row = e.target.closest?.(".art-album");
+  if (row && !row.contains(e.relatedTarget)) row.classList.remove("dragging");
+});
+$("#main").addEventListener("drop", e => {
+  const row = state.view === "operations" && e.target.closest(".art-album");
+  if (!row) return;
+  e.preventDefault();
+  row.classList.remove("dragging");
+  uploadArt(+row.dataset.i, e.dataTransfer.files[0]);
+});
+loadLibrary();
+
+// --- cleanup dialog ----------------------------------------------------------
+
+const cu = { plan: null, busy: false };
+const post = (p, body) => fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+const val = v => v ? esc(v) : `<span class="none">(empty)</span>`;
+const moves = t => t.new_path !== t.path;
+const catalogNote = c => c.in_sync ? "Catalog matches the files on disk."
+  : `Catalog vs disk: ${c.untracked.count} files not in the catalog, ${c.missing.count} entries without a file, ${c.stale.count} out of date (new downloads? run scan.py).`;
+const cuMsg = (text, err) => { $("#cleanup-msg").textContent = text; $("#cleanup-msg").classList.toggle("err", !!err); };
+
+// --- progress bar ------------------------------------------------------------
+
+// null when the server has no progress endpoint (an older app.py still running): the bar then just animates.
+const fetchProgress = () => fetch("/api/progress").then(r => r.ok ? r.json() : null).catch(() => null);
+
+// Draw job progress `p` into a .progress box (indeterminate when the total isn't known yet).
+function drawProgress(box, p) {
+  const known = p && p.running && p.total > 0;
+  const pct = known ? Math.round(100 * p.done / p.total) : 0;
+  box.classList.toggle("indeterminate", !known);
+  box.querySelector(".bar").style.width = known ? pct + "%" : "";
+  const track = box.querySelector(".track");
+  known ? track.setAttribute("aria-valuenow", pct) : track.removeAttribute("aria-valuenow");
+  const unit = (p && UNITS[p.op]) || "";
+  box.querySelector(".pcount").textContent = known ? `${p.done} / ${p.total} ${unit} · ${pct}%` : "Working…";
+  // Long paths: the end (album/file) says more than the start.
+  const msg = (p && p.message) || "", detail = box.querySelector(".pdetail");
+  detail.textContent = msg.length > 70 ? "…" + msg.slice(-70) : msg;
+  detail.title = msg;
+  // Lookups can be stopped between items, keeping what they've found.
+  let stopBtn = box.querySelector(".pstop");
+  if (!stopBtn) {
+    stopBtn = Object.assign(document.createElement("button"), { type: "button", className: "btn pstop", textContent: "Stop" });
+    stopBtn.title = "Stop after the current item. What's been found so far is kept.";
+    box.querySelector(".ptext").append(stopBtn);
+  }
+  stopBtn.hidden = !(p && p.running && p.stoppable);
+}
+
+document.addEventListener("click", async e => {
+  if (!e.target.classList.contains("pstop")) return;
+  e.target.disabled = true;
+  e.target.textContent = "Stopping…";
+  try { await post("/api/jobs/stop", {}); } catch { e.target.disabled = false; e.target.textContent = "Stop"; }
+});
+
+async function openCleanup() {
+  $("#cleanup").classList.add("open");
+  await refreshJobs();
+  if (await attachJob("cleanup")) return;  // a job was running: it reopened the plan when it finished
+  $("#cleanup-lede").textContent = "Reading tags…";
+  $("#cleanup-body").innerHTML = "";
+  $("#apply-cleanup").disabled = true;
+  try {
+    const plan = await api("/api/cleanup");
+    if (plan.error) throw new Error(plan.error);
+    cu.plan = plan;
+    cu.resolutions = {};  // clash choices belong to one plan
+    renderCleanup();
+  } catch (err) { $("#cleanup-lede").textContent = err.message; }
+}
+
+function closeCleanup() { if (!cu.busy && !$("#cleanup").classList.contains("inline")) $("#cleanup").classList.remove("open"); }
+
+function renderCleanup() {
+  const { summary: s, albums, undo_available } = cu.plan;
+  $("#undo-cleanup").hidden = !undo_available;
+  $("#cleanup-lede").textContent = s.tracks
+    ? `${s.albums} albums · ${s.tag_fixes} songs with tag fixes · ${s.renames} files to rename` +
+      (s.clashes ? ` · ${s.clashes} name clashes` : "") +
+      (s.duplicates ? ` · ${s.duplicates} duplicate${s.duplicates === 1 ? "" : "s"} side by side` : "") +
+      (s.busy ? ` · ${s.busy} album${s.busy === 1 ? "" : "s"} still downloading (skipped)` : "") +
+      ". Untick anything you want to leave alone; open an album or song to see its changes."
+    : s.duplicates ? "Every tag and file name already follows the rules, but there are duplicates to sort out."
+    : "Nothing to clean up: every tag and file name already follows the rules.";
+  $("#cleanup-body").innerHTML = albums.map((a, i) => `
+    <div class="crow ${a.busy ? "busy" : ""}">
+      <input type="checkbox" class="cu-album" data-i="${i}" ${a.busy ? "disabled" : "checked"} aria-label="Include album ${esc(a.album)}">
+      <details>
+        <summary><span class="sum-main">${esc(a.album || "Unknown album")}</span>${a.artist ? `<span class="badge">${esc(a.artist)}</span>` : ""}<span class="badge">${a.tracks.length} song${a.tracks.length === 1 ? "" : "s"}</span>${a.busy ? `<span class="badge warn">still downloading, skipped</span>` : ""}
+          <div class="sum-sub">${esc(a.folder || "(library root)")}/ → ${esc(a.new_folder || "several folders")}/</div>
+        </summary>
+        <div class="tracks">${a.tracks.map((t, j) => `
+          <div class="crow" data-path="${esc(t.path)}">
+            <input type="checkbox" class="cu-track" data-i="${i}" data-j="${j}" ${a.busy ? "disabled" : "checked"} aria-label="Include ${esc(t.title)}">
+            <details>
+              <summary>${esc(t.title)}<span class="badge">${t.changes.length + (moves(t) ? 1 : 0)} change${t.changes.length + (moves(t) ? 1 : 0) === 1 ? "" : "s"}</span><span class="clash-slot" data-i="${i}" data-j="${j}">${clashBadge(t)}</span></summary>
+              <table class="diff">
+                ${t.changes.map(c => `<tr class="tagrow"><td>${esc(c.label)}</td><td><span class="old">${val(c.old)}</span><br><span class="new">${val(c.new)}</span></td></tr>`).join("")}
+                ${moves(t) ? `<tr class="pathrow"><td>File</td><td><span class="old">${esc(t.path)}</span><br><span class="new">${esc(t.new_path)}</span></td></tr>` : ""}
+              </table>
+            </details>
+          </div>`).join("")}
+        </div>
+      </details>
+    </div>`).join("");
+  refreshClashMarks();
+}
+
+// --- name clashes --------------------------------------------------------------
+
+const discarded = () => new Set((cu.plan.clash_groups || []).flatMap(g =>
+  cu.resolutions[g.target] === undefined ? [] : g.members.map(m => m.path).filter(p => p !== cu.resolutions[g.target])));
+
+function clashBadge(t) {
+  if (!t.clash) return "";
+  if (!t.clash_target) return `<span class="badge warn">name clash, won't move</span>`;
+  const keep = cu.resolutions[t.clash_target];
+  const [cls, text] = keep === undefined ? ["warn", "name clash · compare…"]
+    : keep === t.path ? ["ok", "keeping this copy · change…"] : ["bad", "discarding this copy · change…"];
+  return `<button type="button" class="badge ${cls} clash-btn" data-target="${esc(t.clash_target)}">${text}</button>`;
+}
+
+// Update badges, struck-through rows, the clash banner and the Apply count after a choice.
+function refreshClashMarks() {
+  const gone = discarded();
+  document.querySelectorAll(".clash-slot").forEach(s => {
+    const t = cu.plan.albums[s.dataset.i].tracks[s.dataset.j];
+    s.innerHTML = clashBadge(t);
+    s.closest(".crow").classList.toggle("discarding", gone.has(t.path));
+  });
+  const groups = cu.plan.clash_groups || [];
+  const done = groups.filter(g => cu.resolutions[g.target] !== undefined).length;
+  $("#clash-bar").hidden = !groups.length;
+  $("#clash-bar-text").textContent = `${groups.length} duplicate${groups.length === 1 ? "" : "s"} to sort out: songs that would end up with, or already share, the same name. ` +
+    (done ? `${done} decided; undecided ones stay where they are.` : "Until you decide, they stay where they are.");
+  updateCleanupCount();
+}
+
+const CMP_ROWS = [
+  ["Status", m => m.role === "in place" ? "Already in place" : "Would be moved here"],
+  ["Current file", m => m.path, null, "path"],
+  ["Format", m => `${(m.ext || "").toUpperCase()} · ${m.codec || "?"}`],
+  ["Type", m => m.lossless ? "Lossless" : "Lossy", m => +m.lossless],
+  ["Bit depth", m => m.bit_depth ? `${m.bit_depth}-bit` : "—", m => m.bit_depth || 0],
+  ["Sample rate", m => m.sample_rate ? `${m.sample_rate / 1000} kHz` : "—", m => m.sample_rate || 0],
+  ["Bitrate", m => m.bitrate ? `${Math.round(m.bitrate / 1000)} kbps` : "—", m => m.bitrate || 0],
+  ["Channels", m => m.channels ?? "—"],
+  ["Duration", m => dur(m.duration)],
+  ["File size", m => m.size ? bytes(m.size) : "—"],
+  ["Cover art", m => m.has_cover ? "Embedded" : "None", m => +m.has_cover],
+  ["Lyrics", m => m.lyrics ? `${m.lyrics === "synced" ? "Synced" : "Plain"} (${m.lyrics_source === "embedded" ? "in tags" : "." + m.lyrics_source})` : "None",
+    m => ({ synced: 2, plain: 1 })[m.lyrics] || 0],
+  ["MusicBrainz IDs", m => m.musicbrainz ? "Yes" : "No", m => +m.musicbrainz],
+  ["Tag count", m => m.tag_count ?? "—", m => m.tag_count || 0],
+  ["Title", m => m.title || "—"], ["Artist", m => m.artist || "—"], ["Album", m => m.album || "—"], ["Year", m => m.year ?? "—"],
+];
+
+function openClash(index) {
+  const groups = cu.plan.clash_groups || [];
+  if (!groups.length) return;
+  cu.clashIndex = (index + groups.length) % groups.length;
+  const g = groups[cu.clashIndex], keep = cu.resolutions[g.target];
+  const name = `<code>${esc(g.target)}.${esc([...new Set(g.members.map(m => m.ext || "?"))].join(" / ."))}</code>`;
+  const trash = `go to <code>.muse-trash/</code> inside your library (nothing is deleted, and Undo brings them back)`;
+  $("#clash-title").textContent = g.kind === "duplicates" ? "Duplicate song" : "Name clash";
+  $("#clash-lede").innerHTML = g.kind === "duplicates"
+    ? `These files are the same song, side by side in one folder: ${name}. Pick the one to keep; the others ${trash}.`
+    : `These files would all be saved as ${name}. Pick the one to keep: it moves there, and the others ${trash}.`;
+  $("#clash-pos").textContent = `Clash ${cu.clashIndex + 1} of ${groups.length}`;
+  $("#clash-prev").disabled = $("#clash-next").disabled = groups.length < 2;
+  const chosen = m => keep === m.path ? "chosen" : "";
+  const rows = CMP_ROWS.map(([label, show, score, cls]) => {
+    const scores = score ? g.members.map(score) : [];
+    const top = Math.max(...scores), differs = scores.some(s => s !== scores[0]);
+    return `<tr><td>${label}</td>${g.members.map((m, k) => m.error  // unreadable file: show where it is and why
+      ? `<td class="${chosen(m)}">${label === "Current file" ? esc(m.path) : label === "Status" ? esc(m.error) : "—"}</td>`
+      : `<td class="${[cls, chosen(m), differs && scores[k] === top ? "best" : ""].join(" ")}">${esc(show(m))}</td>`).join("")}</tr>`;
+  }).join("");
+  const durations = g.members.map(m => m.duration).filter(Boolean);
+  const versionsDiffer = durations.length > 1 && Math.max(...durations) - Math.min(...durations) > 2;
+  $("#clash-body").innerHTML = `
+    <div class="compare"><table class="cmp">
+      <thead><tr><th></th>${g.members.map(m => `<th class="${chosen(m)}">
+        <label class="pick"><input type="radio" name="clash-keep" value="${esc(m.path)}" ${keep === m.path ? "checked" : ""}> Keep this one</label>
+        ${m.path === g.recommended ? `<span class="badge ok">Recommended: best quality</span>` : ""}
+        ${(m.lyrics !== "synced" && g.members.some(o => o !== m && o.lyrics === "synced")) || (!m.lyrics && g.members.some(o => o.lyrics))
+          ? `<div class="muted" style="font-weight:400;margin-top:4px">If kept, it gets the ${g.members.some(o => o !== m && o.lyrics === "synced") ? "synced" : "plain"}
+          lyrics from the other copy, saved next to it.</div>` : ""}
+        ${g.align_to && m.mb_album_id !== g.align_to.id ? `<div class="muted" style="font-weight:400;margin-top:4px">If kept, it's re-tagged to match
+          ${esc(g.align_to.title)}${g.align_to.date ? ` (${esc(g.align_to.date)})` : ""}, the edition the rest of the album is on.</div>` : ""}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${versionsDiffer ? `<p class="note">The durations differ by more than 2 seconds, so these may be different versions or edits rather than duplicates. Check before discarding.</p>` : ""}
+    <label class="pick pick-all"><input type="radio" name="clash-keep" value="" ${keep === undefined ? "checked" : ""}> Keep all of them where they are (decide later)</label>
+    <p class="lede">Highlighted cells are the better value in that row.</p>`;
+  $("#clash").classList.add("open");
+}
+
+function closeClash() { $("#clash").classList.remove("open"); }
+
+$("#clash").addEventListener("change", e => {
+  if (e.target.name !== "clash-keep") return;
+  const g = cu.plan.clash_groups[cu.clashIndex];
+  if (e.target.value) cu.resolutions[g.target] = e.target.value;
+  else delete cu.resolutions[g.target];
+  openClash(cu.clashIndex);  // redraw the "chosen" column outline
+  refreshClashMarks();
+});
+
+$("#clash").addEventListener("click", e => {
+  const id = e.target.id;
+  if (e.target === $("#clash") || id === "clash-done") return closeClash();
+  if (id === "clash-prev") return openClash(cu.clashIndex - 1);
+  if (id === "clash-next") return openClash(cu.clashIndex + 1);
+});
+
+function selectedTracks() {
+  const gone = discarded();
+  return [...document.querySelectorAll(".cu-track:checked:not(:disabled)")]
+    .map(b => cu.plan.albums[b.dataset.i].tracks[b.dataset.j]).filter(t => !gone.has(t.path));
+}
+
+function updateCleanupCount() {
+  const tags = $("#opt-tags").checked, rename = $("#opt-rename").checked;
+  $("#cleanup-body").classList.toggle("no-tags", !tags);
+  $("#cleanup-body").classList.toggle("no-rename", !rename);
+  const kept = new Set(Object.values(cu.resolutions || {}));
+  const n = selectedTracks().filter(t => (tags && t.changes.length) || (rename && moves(t) && (!t.clash || kept.has(t.path)))).length;
+  const d = discarded().size;
+  $("#apply-cleanup").textContent = n || d
+    ? [n && `Apply to ${n} song${n === 1 ? "" : "s"}`, d && `discard ${d} duplicate${d === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
+    : "Apply";
+  $("#apply-cleanup").disabled = !(n || d) || cu.busy;
+  return n;
+}
+
+$("#cleanup").addEventListener("change", e => {
+  const el = e.target;
+  if (el.classList.contains("cu-album")) {
+    document.querySelectorAll(`.cu-track[data-i="${el.dataset.i}"]`).forEach(b => b.checked = el.checked);
+  } else if (el.classList.contains("cu-track")) {
+    const all = [...document.querySelectorAll(`.cu-track[data-i="${el.dataset.i}"]`)];
+    const box = document.querySelector(`.cu-album[data-i="${el.dataset.i}"]`);
+    box.checked = all.every(b => b.checked);
+    box.indeterminate = !box.checked && all.some(b => b.checked);
+  }
+  updateCleanupCount();
+});
+
+$("#cleanup").addEventListener("click", async e => {
+  const clashBtn = e.target.closest(".clash-btn");
+  if (clashBtn) {
+    e.preventDefault();  // it sits inside a <summary>; don't fold the row
+    return openClash(cu.plan.clash_groups.findIndex(g => g.target === clashBtn.dataset.target));
+  }
+  const id = e.target.id;
+  if (id === "open-clashes") {
+    const groups = cu.plan.clash_groups;
+    const first = groups.findIndex(g => cu.resolutions[g.target] === undefined);
+    return openClash(first < 0 ? 0 : first);
+  }
+  if (e.target === $("#cleanup") || id === "close-cleanup") return closeCleanup();
+  if (id === "expand-all" || id === "collapse-all")
+    return document.querySelectorAll("#cleanup-body > .crow > details").forEach(d => d.open = id === "expand-all");
+  if (id === "apply-cleanup") {
+    const tags = $("#opt-tags").checked, rename = $("#opt-rename").checked, n = updateCleanupCount();
+    const what = [tags && "rewrite tags", rename && "rename/move files"].filter(Boolean).join(" and ");
+    const d = discarded().size;
+    if (!confirm(`This will ${what} for ${n} songs` + (d ? ` and move ${d} duplicate${d === 1 ? "" : "s"} into .muse-trash/` : "") +
+                 `. You can undo it afterwards. Continue?`)) return;
+    const paths = selectedTracks().map(t => t.path), resolutions = cu.resolutions;
+    runJob("cleanup", "/api/cleanup/apply", { paths, tags, rename, resolutions });
+  }
+  if (id === "undo-cleanup") {
+    if (!confirm("Undo the last cleanup? Tags and file locations go back to how they were.")) return;
+    runJob("cleanup", "/api/cleanup/undo", {});
+  }
+});
+
+// --- MusicBrainz dialog ----------------------------------------------------------
+
+const mb = { data: null, busy: false };
+const MB_STATUS = {
+  matched: ["ok", "Matched"], low: ["warn", "Check this match"], poor: ["bad", "Poor match, won't apply"],
+  none: ["bad", "Not found"], error: ["bad", "Lookup failed"],
+};
+const mbMsg = (text, err) => { $("#mb-msg").textContent = text; $("#mb-msg").classList.toggle("err", !!err); };
+
+async function openMb() {
+  $("#mb").classList.add("open");
+  await refreshJobs();
+  if (await attachJob("scrape")) return;  // a job was running: it reloaded the lookups when it finished
+  await loadMb();
+}
+
+function closeMb() { if (!mb.busy && !$("#mb").classList.contains("inline")) $("#mb").classList.remove("open"); }
+
+async function loadMb() {
+  try {
+    const r = await fetch("/api/mb");
+    if (!r.ok) throw new Error("Scrape Details needs the updated server: restart it with .venv/bin/python app.py");
+    mb.data = await r.json();
+    renderMb();
+  } catch (err) { $("#mb-lede").textContent = err.message; }
+}
+
+function renderMb() {
+  const { proposals, incomplete, mixed = [] } = mb.data;
+  const count = s => proposals.filter(p => p.status === s).length;
+  $("#mb-lede").textContent = (proposals.length
+    ? `${proposals.length} album${proposals.length === 1 ? "" : "s"} looked up: ${count("matched")} matched, ${count("low")} to check, ${count("poor") + count("none") + count("error")} without a usable match. `
+    : "No lookups waiting for review. ") +
+    "Look up albums on musicbrainz.org (about 2 seconds per album), review the matches, then apply them to write the details into your files and the catalog.";
+  const incompleteHtml = incomplete.length ? `<div class="mb-section">Incomplete albums in your library (${incomplete.length})</div>` +
+    incomplete.map(r => `<div class="crow"><details><summary><span class="sum-main">${esc(r.title)}</span><span class="badge">${esc(r.artist || "")}</span>
+      <span class="badge warn">${r.local_count} of ${r.track_count} · ${r.missing_count} missing</span></summary>
+      <div class="mb-release"><a href="https://musicbrainz.org/release/${esc(r.mb_release_id)}" target="_blank" rel="noopener">View on MusicBrainz ↗</a></div>
+      <ol class="mb-list">${r.missing.map(m => `<li value="${m.track_no}">${esc(m.title)}${m.disc_no > 1 ? ` (disc ${m.disc_no})` : ""}</li>`).join("")}</ol>
+      </details></div>`).join("") : "";
+  const pending = new Set(proposals.map(p => p.folder));
+  const mixedHtml = mixed.length ? `<div class="mb-section">Albums split across editions (${mixed.length})</div>` +
+    mixed.map(m => `<div class="crow"><details><summary><span class="sum-main">${esc(m.album || m.folder)}</span>
+      <span class="badge warn">${m.editions.length} editions</span>${m.parts?.length > 1 ? `<span class="badge warn">filed in ${m.parts.length} folders</span>` : ""}
+      <span class="badge">${pending.has(m.folder) ? "fix waiting below" : m.editions.some(e => e.has_summary) ? "nothing to change" : "needs “Look up albums”"}</span></summary>
+      <ul class="mb-list">${m.editions.map(e => `<li>${!e.id ? "No MusicBrainz data, filed apart" : e.title ? esc(e.title) + (e.date ? ` (${esc(e.date)})` : "") : "An edition not stored here"}:
+        ${e.count} song${e.count === 1 ? "" : "s"} <span class="muted">${esc(e.songs.slice(0, 4).join(", "))}${e.songs.length > 4 ? "…" : ""}</span>
+        ${e.id ? `· <a href="https://musicbrainz.org/release/${esc(e.id)}" target="_blank" rel="noopener">MusicBrainz ↗</a>` : ""}</li>`).join("")}</ul>
+      </details></div>`).join("") : "";
+  const proposalHtml = proposals.length ? `<div class="mb-section">Lookups to review (${proposals.length})</div>` + proposals.map((p, i) => {
+    const pl = p.payload, r = pl.release || {}, [cls, label] = MB_STATUS[p.status] || ["", p.status];
+    const usable = p.status === "matched" || p.status === "low";
+    return `<div class="crow">
+      <input type="checkbox" class="mb-pick" data-i="${i}" ${usable ? (p.status === "matched" ? "checked" : "") : "disabled"} aria-label="Apply ${esc(p.album)}">
+      <details>
+        <summary><span class="sum-main">${esc(p.album || "Unknown album")}</span><span class="badge">${esc(p.artist || "")}</span>
+          <span class="badge ${cls}">${label}</span>
+          ${r.id ? `<span class="badge">${pl.matched}/${pl.local} songs paired</span>
+            <span class="badge ${pl.complete ? "ok" : "warn"}">${pl.complete ? "Complete" : `Incomplete · ${pl.missing.length} missing`}</span>
+            ${pl.detached?.length ? `<span class="badge warn">${pl.detached.length} song${pl.detached.length === 1 ? "" : "s"} from another edition</span>` : ""}` : ""}
+          <div class="sum-sub">${r.id ? `→ ${esc(r.title)} · ${esc(r.artist_credit || r.artist || "")}${r.date ? " · " + esc(r.date) : ""}${r.country ? " · " + esc(r.country) : ""}${r.label ? " · " + esc(r.label) : ""} · ${r.track_count} tracks`
+            : esc(pl.reason || "")}</div>
+        </summary>
+        ${r.id ? `<div class="mb-release">Found by ${esc(pl.how)} · MusicBrainz score ${p.score} · artist match ${Math.round((pl.artist_match ?? 1) * 100)}% ·
+          <a href="${esc(r.url)}" target="_blank" rel="noopener">View release on MusicBrainz ↗</a></div>` : ""}
+        ${pl.missing?.length ? `<div class="mb-section">Not in your library</div><ol class="mb-list">${pl.missing.map(m =>
+          `<li value="${m.track}">${esc(m.title)}${m.disc > 1 ? ` (disc ${m.disc})` : ""}</li>`).join("")}</ol>` : ""}
+        ${pl.extras?.length ? `<div class="mb-section">Your files not on this release</div>
+          <p class="muted mb-release">Left as they are${pl.detached?.length ? `, except that ${pl.detached.length} of them carry another edition's release ids, which are cleared so the album points at one edition (recording and artist ids stay)` : ""}.</p>
+          <ul class="mb-list">${pl.extras.map(x => `<li class="path">${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${pl.tracks?.length ? `<div class="mb-section">Changes per song</div><div class="tracks">${pl.tracks.map(t => `
+          <div class="crow"><details><summary>${esc(t.title || t.path)} ${t.detach ? "→ detached from another edition" : `→ #${esc(t.position)} ${esc(t.mb_title)}`}
+            <span class="badge">${t.changes.length ? `${t.changes.length} change${t.changes.length === 1 ? "" : "s"}` : "already up to date"}</span></summary>
+            <table class="diff">${t.changes.map(c => `<tr><td>${esc(c.label)}</td><td><span class="old">${val(c.old)}</span><br><span class="new">${val(c.new)}</span></td></tr>`).join("")}</table>
+          </details></div>`).join("")}</div>` : ""}
+      </details>
+    </div>`;
+  }).join("") : "";
+  $("#mb-body").innerHTML = mixedHtml + incompleteHtml + proposalHtml || `<div class="empty">Click <b>Look up albums</b> to match your albums against MusicBrainz.</div>`;
+  updateMbCount();
+}
+
+function updateMbCount() {
+  const n = document.querySelectorAll(".mb-pick:checked").length;
+  $("#mb-apply").textContent = n ? `Apply ${n} album${n === 1 ? "" : "s"}` : "Apply";
+  $("#mb-apply").disabled = !n || mb.busy;
+}
+
+$("#mb").addEventListener("change", e => { if (e.target.classList.contains("mb-pick")) updateMbCount(); });
+$("#mb").addEventListener("click", async e => {
+  const id = e.target.id;
+  if (e.target === $("#mb") || id === "mb-close") return closeMb();
+  if (id === "mb-expand" || id === "mb-collapse")
+    return document.querySelectorAll("#mb-body > .crow > details").forEach(d => d.open = id === "mb-expand");
+  if (id === "mb-fetch") runJob("scrape", "/api/mb/fetch", { refresh: $("#mb-refresh").checked });
+  if (id === "mb-apply") {
+    const picks = [...document.querySelectorAll(".mb-pick:checked")].map(b => mb.data.proposals[b.dataset.i]);
+    if (!confirm(`Write MusicBrainz details into the files of ${picks.length} album${picks.length === 1 ? "" : "s"}? Undo history can reverse it.`)) return;
+    runJob("scrape", "/api/mb/apply", { keys: picks.map(p => p.album_key) });
+  }
+});
+
+// --- jobs: every long-running request, its progress bars, the header indicator, and coming back to it ------
+// One job runs at a time, on the server. It keeps going whatever the page does, so the page follows it by
+// polling: quickly while one runs, slowly otherwise to notice jobs started elsewhere (another tab, a phone).
+
+const UNITS = { apply: "songs", undo: "steps", scan: "files" };
+const JOB_NAMES = { apply: "cleanup", undo: "undo", scan: "scan", musicbrainz: "Scrape Details run", artwork: "artwork run",
+                    lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge" };
+// Where each job is started from: the header indicator takes you there.
+const JOB_HOME = { apply: "cleanup", undo: "history", musicbrainz: "scrape", artwork: "art", lyrics: "lyrics", merge: "merge",
+                   housekeeping: "history", scan: "ingest", navidrome: "ingest" };
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// Each job request: which job it is, what to say while it runs, and how to sum up its result.
+const JOB_TEXT = {
+  "/api/scan": { op: "scan", label: "Scanning…",
+    done: r => `Scan finished: ${r.found} audio files, ${r.probed} read, ${r.removed} removed` + (r.failed ? `, ${r.failed} unreadable` : "") + "." },
+  "/api/navidrome/sync": { op: "navidrome", label: "Syncing with Navidrome…",
+    done: r => `Navidrome ${r.navidrome}: ${r.linked} of ${r.songs_in_library} songs linked` +
+      (r.navidrome_only ? `, ${r.navidrome_only} Navidrome songs not in the catalog` : "") + "." },
+  "/api/cleanup/apply": { op: "apply", label: "Applying… (rewriting tags and moving files)",
+    done: r => `Done: ${r.stats.tags || 0} songs retagged, ${r.stats.moved || 0} files moved` +
+      (r.stats.discarded ? `, ${r.stats.discarded} duplicates moved to .muse-trash` : "") +
+      (r.stats.lyrics_carried_over ? `, lyrics kept for ${plural(r.stats.lyrics_carried_over, "song")}` : "") +
+      (r.stats.clashes_skipped ? `, ${r.stats.clashes_skipped} clashes left in place` : "") + ". " + catalogNote(r.catalog) },
+  "/api/cleanup/undo": { op: "undo", label: "Undoing…",
+    done: r => `Undone: ${Object.entries(r).filter(([k, v]) => k !== "catalog" && k !== "job_id" && v)
+      .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`).join(", ") || "nothing needed"}. ${catalogNote(r.catalog)}` },
+  "/api/mb/fetch": { op: "musicbrainz", label: "Looking albums up on MusicBrainz…",
+    done: r => r.albums ? `Looked up ${r.albums} albums: ${r.matched || 0} matched, ${r.low || 0} to check, ${(r.poor || 0) + (r.none || 0) + (r.error || 0)} without a usable match.`
+      : "Every album is already matched. Tick “Re-check albums already matched” to look them up again." },
+  "/api/mb/apply": { op: "musicbrainz", label: "Writing tags…",
+    done: r => `Done: ${r.stats.tags || 0} songs updated` + (r.stats.unchanged ? `, ${r.stats.unchanged} already up to date` : "") +
+      (r.stats.skipped ? `, ${r.stats.skipped} skipped (file moved since the lookup)` : "") + `. ${plural(r.incomplete_albums, "incomplete album")} in the library.` },
+  "/api/art/find": { op: "artwork",
+    label: b => b.online ? "Searching… (online lookups take a couple of seconds per album)" : "Looking for covers already in your album folders and songs…",
+    done: r => `Looked at ${r.albums} albums: ${r.with_candidates} have candidates.` +
+      (r.errors.length ? ` ${r.errors.length} online lookups failed (${r.errors[0]}).` : "") },
+  "/api/art/apply": { op: "artwork", label: "Embedding artwork…",
+    done: r => `Done: artwork embedded in ${r.stats.songs || 0} songs across ${r.stats.albums || 0} albums` +
+      (r.stats.cover_files ? `, ${r.stats.cover_files} cover files saved` : "") + (r.stats.unsupported ? `, ${r.stats.unsupported} songs in formats without artwork support` : "") + "." },
+  "/api/lyrics/find": { op: "lyrics", label: "Looking lyrics up on LRCLIB (about a second per song)…",
+    done: r => r.songs ? `Looked up ${r.songs} songs: ${r.synced || 0} synced, ${r.plain || 0} plain, ${r.instrumental || 0} instrumental, ${r.none || 0} not found` +
+      (r.errors ? `, ${r.errors} failed (LRCLIB was busy; try again later)` : "") + "."
+      : "Every song without lyrics has already been looked up. Tick “Ask again” to retry." },
+  "/api/lyrics/apply": { op: "lyrics", label: "Saving lyrics…",
+    done: r => `Saved ${r.stats.synced || 0} synced and ${r.stats.plain || 0} plain lyrics` + (r.stats.skipped ? ` (${r.stats.skipped} skipped: moved or already had them)` : "") + "." },
+  "/api/lyrics/orphans": { op: "lyrics", label: "Tidying lyrics files…",
+    done: r => `Done: ${r.stats.reattached || 0} reattached, ${r.stats.trashed || 0} moved to .muse-trash.` },
+  "/api/merge/apply": { op: "merge", label: "Merging…",
+    done: r => `Merged: ${r.stats.retagged || 0} songs retagged, ${r.stats.moved || 0} moved.` +
+      (r.warnings.length ? " Some songs share a track number: Clean up shows them as duplicates to compare." : "") },
+};
+
+// The places jobs are started from: the jobs they run, their buttons and message line, and how to reload them.
+const PANES = {
+  cleanup: { ops: ["apply", "undo"], state: cu, buttons: "#cleanup button", msg: "#cleanup-msg",
+             reload: async () => { await loadLibrary(); if ($("#cleanup").classList.contains("open")) await openCleanup(); },
+             after: () => updateCleanupCount() },
+  scrape: { ops: ["musicbrainz"], state: mb, buttons: "#mb button", msg: "#mb-msg",
+            reload: async () => { await loadMb(); await loadLibrary(); }, after: () => updateMbCount() },
+  art: { ops: ["artwork"], state: art, buttons: "#ops-pane button", msg: "#art-msg",
+         reload: async () => { await loadLibrary(); await loadArt(); }, after: () => updateArtCount() },
+  lyrics: { ops: ["lyrics"], state: lyr, buttons: "#lyrics-op button", msg: "#lyr-msg",
+            reload: async () => { await loadLyricsOp(); await loadLibrary(); } },
+  merge: { ops: ["merge"], state: merge, buttons: "#ops-pane button", msg: "#merge-msg",
+           reload: async () => { await loadLibrary(); await loadMerge(); } },
+  history: { ops: ["undo", "housekeeping"], state: { busy: false }, buttons: "#house button", msg: "#house-msg",
+             reload: async () => { await loadLibrary(); await loadHousekeeping(); if ($("#house")) $("#house").innerHTML = housekeepingHtml(); } },
+  ingest: { ops: ["scan", "navidrome"], state: { busy: false }, buttons: "#run-scan, #nd-sync", msg: "#ingest-msg", reload: loadLibrary },
+};
+
+const jobs = { p: null, local: null, seen: new Set(), timer: null, gen: 0, waiters: [], shown: undefined };
+// How long a finished job's summary is still worth showing to a page that comes back (stops and failures: always).
+const RECENT = 30 * 60;
+
+// The job running now: the server's, or one this page has just asked for that the server hasn't reported yet.
+function currentJob() {
+  if (jobs.p && jobs.p.running) return jobs.p;
+  return jobs.local ? { running: true, op: jobs.local, done: 0, total: 0 } : null;
+}
+
+async function refreshJobs() {
+  const p = await fetchProgress();
+  if (p) jobs.p = p;
+  drawJobs();
+}
+
+// Every poll also tells the server a page is watching: lookups nobody watches stop by themselves.
+async function pollJobs() {
+  const gen = ++jobs.gen;
+  clearTimeout(jobs.timer);
+  await refreshJobs();
+  if (gen === jobs.gen) jobs.timer = setTimeout(pollJobs, currentJob() ? 500 : document.hidden ? 15000 : 4000);
+}
+
+const paneVisible = pane => { const el = $(pane.msg); return !!el && el.getClientRects().length > 0; };
+
+function setMsg(pane, text, err) {
+  const el = $(pane.msg);
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("err", !!err);
+}
+
+// Turn a pane's buttons off while a job runs; on again afterwards (only the ones this turned off).
+function setButtons(pane, on) {
+  for (const b of document.querySelectorAll(pane.buttons)) {
+    if (b.classList.contains("pstop")) continue;
+    if (!on && !b.disabled) { b.disabled = true; b.dataset.jobOff = ""; }
+    if (on && "jobOff" in b.dataset) { b.disabled = false; delete b.dataset.jobOff; }
+  }
+}
+
+// Bring the header indicator, the progress bars and the panes in line with the job running now (if any).
+function drawJobs() {
+  const p = currentJob();
+  if (p && p.job !== jobs.shown) {  // a new job: Stop buttons start fresh
+    jobs.shown = p.job;
+    document.querySelectorAll(".pstop").forEach(b => Object.assign(b, { disabled: false, textContent: "Stop" }));
+  }
+  $("#job").hidden = !p;
+  if (p) {
+    const name = JOB_NAMES[p.op] || "job";
+    $("#job-name").textContent = name[0].toUpperCase() + name.slice(1) + (p.total ? ` · ${p.done} / ${p.total}` : " · starting…");
+    $("#job .pstop").hidden = !p.stoppable;
+  }
+  for (const box of document.querySelectorAll(".progress[data-ops]")) {
+    const mine = !!p && box.dataset.ops.split(" ").includes(p.op);
+    box.hidden = !mine;
+    if (mine) drawProgress(box, p);
+  }
+  for (const [name, pane] of Object.entries(PANES)) {
+    if (p && pane.ops.includes(p.op) && !pane.state.busy && paneVisible(pane)) attachJob(name);
+    if (pane.attached || pane.running) {  // the pane may have been redrawn since the job started
+      setButtons(pane, false);
+      if (pane.note && $(pane.msg) && !$(pane.msg).textContent) setMsg(pane, pane.note);
+    }
+    if (!p && !pane.state.busy && paneVisible(pane)) showLast(name);
+  }
+  if (!p) jobs.waiters.splice(0).forEach(done => done());
+}
+
+// Run a job from a pane: its buttons off while it runs, then reload the pane and say how it went.
+async function runJob(name, path, body = {}, { onSuccess } = {}) {
+  const pane = PANES[name], text = JOB_TEXT[path] || {};
+  pane.state.busy = pane.running = true;
+  setButtons(pane, false);
+  pane.note = (typeof text.label === "function" ? text.label(body) : text.label) || "Working…";
+  setMsg(pane, pane.note);
+  jobs.local = text.op || pane.ops[0];
+  pollJobs();
+  let r = null, error = null;
+  try { r = await post(path, body); onSuccess?.(r); } catch (err) { error = err; }
+  jobs.local = null;
+  await refreshJobs();
+  try { await pane.reload(); } catch {}
+  pane.state.busy = pane.running = false;
+  setButtons(pane, true);
+  pane.after?.();
+  if (error && error.message.startsWith("busy")) setMsg(pane, "Another job is running (see the top of the page). Try again when it has finished.", true);
+  else if (error) setMsg(pane, error.message, true);
+  else showResult(name, path, r);
+  return r;
+}
+
+// A job this page didn't start (another tab or device, or before a reload) is running: follow it to the end,
+// then reload the pane and show how it ended. Resolves true once it has finished, false if none was running.
+function attachJob(name) {
+  const pane = PANES[name], p = currentJob();
+  if (pane.attached) return pane.attached;
+  if (!p || !pane.ops.includes(p.op) || pane.state.busy) return Promise.resolve(false);
+  pane.state.busy = true;
+  pane.note = `A ${JOB_NAMES[p.op] || "job"} is in progress…`;
+  setMsg(pane, pane.note);
+  setButtons(pane, false);
+  return pane.attached = new Promise(done => jobs.waiters.push(done)).then(async () => {
+    pane.attached = null;
+    try { await pane.reload(); } catch {}
+    pane.state.busy = false;
+    setButtons(pane, true);
+    pane.after?.();
+    showLast(name);
+    return true;
+  });
+}
+
+// The last finished job, if it belongs to this pane and this page hasn't shown it yet.
+function showLast(name) {
+  const pane = PANES[name], last = jobs.p && jobs.p.last;
+  const op = last && (last.op || JOB_TEXT[last.path]?.op);  // a job that failed early never reported its op
+  if (!last || jobs.seen.has(last.id) || !pane.ops.includes(op)) return;
+  if (!last.error && !last.result?.stopped && last.age > RECENT) return;
+  jobs.seen.add(last.id);
+  const when = `${last.error ? "The" : "Last"} ${JOB_NAMES[op] || "job"} (${(last.finished_at || "").slice(11, 16)})`;
+  if (last.error) return setMsg(pane, `${when} failed: ${last.error}`, true);
+  showResult(name, last.path, last.result, `${when}: `);
+}
+
+// Sum up a job's result in its pane. A stopped lookup says how far it got and offers to carry on.
+function showResult(name, path, r, prefix = "") {
+  const pane = PANES[name], text = JOB_TEXT[path] || {};
+  if (r && r.job_id) jobs.seen.add(r.job_id);
+  if (r && r.stopped) {
+    pane.lastStop = r;
+    const el = $(pane.msg), left = r.total - r.done;
+    if (!el) return;
+    el.classList.remove("err");
+    el.innerHTML = esc(prefix) + `Stopped after ${r.done} of ${r.total} ${esc(r.unit)}` +
+      (r.reason === "unwatched" ? " because no Muse page was open" : "") + ". What was found so far is listed and can be applied. " +
+      (left > 0 ? `<button class="btn link" data-continue="${name}">Continue with the other ${left}</button>` : "");
+    return;
+  }
+  let summary = "Done.";
+  try { if (text.done) summary = text.done(r); } catch {}
+  setMsg(pane, prefix + summary);
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-continue]");
+  if (!b) return;
+  const name = b.dataset.continue, r = PANES[name].lastStop;
+  if (r && !PANES[name].state.busy) runJob(name, r.continue.path, r.continue.body);
+});
+$("#job-name").addEventListener("click", () => {
+  const home = JOB_HOME[currentJob()?.op];
+  if (home === "ingest") { state.view = "ingest"; state.folder = null; render(); }
+  else if (home) goOps(home);
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });
+pollJobs();
+
+</script>
+</body>
+</html>

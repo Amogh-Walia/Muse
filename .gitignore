@@ -1,0 +1,18 @@
+# Local settings (copy .env.example)
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Catalog, undo journals and cover cache: personal data, never committed
+data/
+*.db
+*.db-shm
+*.db-wal
+cleanup/journal/
+artwork/cache/
+
+# Internal working notes
+documentation/roadmap.md

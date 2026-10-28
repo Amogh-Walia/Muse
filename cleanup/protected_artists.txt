@@ -1,0 +1,24 @@
+# One artist per line. These names contain ",", "&", "and" or "+" but are a single act,
+# so the cleanup never splits them. Matching ignores case.
+Fitz and The Tantrums
+Band Master Rangeela and Rasila
+Vishal & Shekhar
+Simon & Garfunkel
+Earth, Wind & Fire
+Crosby, Stills, Nash & Young
+Tyler, The Creator
+Florence + the Machine
+Hootie & the Blowfish
+Mumford & Sons
+Of Monsters and Men
+Marina and the Diamonds
+Echo & the Bunnymen
+Hall & Oates
+Kool & the Gang
+Sly & the Family Stone
+Huey Lewis and the News
+Tom Petty and the Heartbreakers
+Bob Marley & The Wailers
+Iron & Wine
+Angus & Julia Stone
+Shankar-Ehsaan-Loy
