@@ -198,7 +198,17 @@ def safe_name(name):
     return name or "_"
 
 
-def _export_plan(root, folders, dest, safe):
+def _chosen_files(files, songs):
+    """Of a folder's files, the ones that go with the chosen songs: each song and its own lyrics files, plus
+    the album's shared files (covers, cue sheets, logs). Other songs' lyrics files stay behind."""
+    def stem(rel):
+        return os.path.splitext(rel)[0]
+    audio = {rel for rel, _ in files if os.path.splitext(rel)[1].lower() in AUDIO_EXTS}
+    others = {stem(rel) for rel in audio - set(songs)}  # songs left out: their lyrics files stay behind too
+    return [(rel, size) for rel, size in files if (rel in songs if rel in audio else stem(rel) not in others)]
+
+
+def _export_plan(root, folders, dest, safe, tracks=()):
     dest = os.path.abspath(os.path.expanduser(dest or ""))
     if not os.path.isdir(dest):
         raise LookupError(f"no such folder: {dest}")
@@ -206,12 +216,18 @@ def _export_plan(root, folders, dest, safe):
         raise ValueError("pick a folder outside the library: copies inside it would be catalogued as duplicates")
     if not os.access(dest, os.W_OK):
         raise PermissionError(f"can't write to {dest}")
+    songs = {}  # folder -> chosen songs (file names), for albums exported in part
+    for path in tracks:
+        songs.setdefault(os.path.dirname(path), set()).add(os.path.basename(path))
     files = []
-    for folder in dict.fromkeys(folders):
+    for folder in dict.fromkeys(list(folders) + [f for f in songs if f not in folders]):
         full = os.path.join(root, folder)
         if not folder or not os.path.isdir(full) or not _inside(full, root) or folder.split(os.sep)[0] == TRASH_DIR:
             continue
-        for rel, size in _album_files(full, False):  # an album folder's own files: subfolders are albums of their own
+        own = _album_files(full, False)  # an album folder's own files: subfolders are albums of their own
+        if folder not in folders:
+            own = _chosen_files(own, songs[folder])
+        for rel, size in own:
             path = os.path.join(folder, rel)
             out = os.path.join(*(safe_name(p) for p in path.split(os.sep))) if safe else path
             files.append({"path": path, "size": size, "to": os.path.join(dest, out)})
@@ -220,13 +236,14 @@ def _export_plan(root, folders, dest, safe):
     return dest, files
 
 
-def export(db_path, folders, dest, safe=True, skip=(), finished=None, progress=_no_progress):
-    """Copy the album files of `folders` (library folders) to `dest`, keeping the library's structure.
-    Files already there with the same size are skipped, so running it again carries on an interrupted export."""
+def export(db_path, folders, dest, safe=True, tracks=(), skip=(), finished=None, progress=_no_progress):
+    """Copy whole album folders (`folders`) and single songs (`tracks`, library paths) to `dest`, keeping the
+    library's structure. A song comes with its lyrics files and its album's cover. Files already there with
+    the same size are skipped, so running it again carries on an interrupted export."""
     conn = crud.connect(db_path)
     root = crud.get_root(conn)
     conn.close()
-    dest, files = _export_plan(root, folders, dest, safe)
+    dest, files = _export_plan(root, folders, dest, safe, tracks)
     work = [f for f in files if not f["there"] and f["path"] not in skip]
     needed, free = sum(f["size"] for f in work), shutil.disk_usage(dest).free
     if needed > free:
@@ -237,5 +254,5 @@ def export(db_path, folders, dest, safe=True, skip=(), finished=None, progress=_
         if finished is not None:
             finished.append(f["path"])
     progress(len(work), len(work), "Done")
-    return {"dest": dest, "folders": len(set(folders)), "copied": len(work), "already_there": len(files) - len(work),
+    return {"dest": dest, "folders": len({os.path.dirname(f["path"]) for f in files}), "copied": len(work), "already_there": len(files) - len(work),
             "bytes": needed, "free_after": shutil.disk_usage(dest).free}

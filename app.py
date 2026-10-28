@@ -122,6 +122,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if ctype.split(";")[0] in ("text/html", "text/css", "text/javascript", "application/json"):
+            self.send_header("Cache-Control", "no-cache")  # the page and its data: never a stale copy after an update
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -145,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                     with self.db() as conn:
                         return self.send(200, route(conn, q, *parts[2:]))
             if parts[0] == "cover" and len(parts) == 2:
-                return self.cover(int(parts[1]))
+                return self.cover(int(parts[1]), embedded_only=q.get("embedded") == "1")
             if parts[0] == "stream" and len(parts) == 2:
                 return self.stream(int(parts[1]))
             if url.path == "/theme.css":
@@ -180,6 +182,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, self.merge_ignore(body))
             if self.path == "/api/appearance":  # only .env colour lines
                 return self.send(200, self.save_appearance(body))
+            if self.path == "/api/art/folder":  # an album folder's artwork for Edit artwork (local images only)
+                from artwork import service as art_service
+                conn = crud.connect(self.db_path)
+                try:
+                    return self.send(200, art_service.folder_state(conn, crud.get_root(conn), body.get("folder") or ""))
+                finally:
+                    conn.close()
+            if self.path == "/api/remake/choose":  # one catalog row: the release a song should go to
+                from musicbrainz import remake
+                conn = crud.connect(self.db_path)
+                try:
+                    remake.choose(conn, int(body["track_id"]), body.get("choice"))
+                    conn.commit()
+                finally:
+                    conn.close()
+                return self.send(200, {"ok": True})
             if self.path == "/api/transfer/preview":  # only reads
                 with self.db() as conn:
                     from transfer import service as transfer
@@ -195,6 +213,7 @@ class Handler(BaseHTTPRequestHandler):
                      "/api/housekeeping/prune": self.prune, "/api/navidrome/sync": self.navidrome_sync,
                      "/api/lyrics/find": self.lyrics_find, "/api/lyrics/apply": self.lyrics_apply,
                      "/api/lyrics/orphans": self.lyrics_orphans, "/api/merge/apply": self.merge_apply,
+                     "/api/art/set": self.art_set, "/api/remake/lookup": self.remake_lookup, "/api/remake/apply": self.remake_apply,
                      "/api/transfer/import": self.transfer_import, "/api/transfer/export": self.transfer_export,
                      }.get(self.path)
             if route is None:
@@ -371,6 +390,25 @@ class Handler(BaseHTTPRequestHandler):
         self.refresh_status(progress)
         return result
 
+    # --- remake Various Artists -----------------------------------------------------
+
+    def api_remake(self, conn, q):
+        from musicbrainz import remake
+        return remake.state(conn, crud.get_root(conn))
+
+    def remake_lookup(self, body):
+        from musicbrainz import remake
+        return run_stoppable("remake", "songs", "Finding the songs…", self.path, body, lambda progress, finished: remake.lookup(
+            self.db_path, body.get("keys") or [], refresh=bool(body.get("refresh")), skip={int(t) for t in body.get("skip") or []},
+            finished=finished, progress=progress))
+
+    def remake_apply(self, body):
+        from musicbrainz import remake
+        progress = report_progress("remake")
+        result = remake.apply(self.db_path, [int(t) for t in body.get("track_ids") or []], progress=progress)
+        self.refresh_status(progress)
+        return result
+
     # --- import & export ----------------------------------------------------------
 
     def api_transfer(self, conn, q, what=None):
@@ -397,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
         from transfer import service as transfer
         return run_stoppable("export", "files", "Working out what to copy…", self.path, body, lambda progress, finished:
                              transfer.export(self.db_path, body.get("folders") or [], body.get("dest"), safe=bool(body.get("safe", True)),
+                                             tracks=body.get("tracks") or [],
                                              skip=set(body.get("skip") or []), finished=finished, progress=progress), unwatched=False)
 
     # --- lyrics -----------------------------------------------------------------
@@ -617,6 +656,13 @@ class Handler(BaseHTTPRequestHandler):
         return service.apply(self.db_path, body.get("choices") or {}, replace=bool(body.get("replace")),
                              save_folder=bool(body.get("save_folder", True)), progress=report_progress("artwork"))
 
+    def art_set(self, body):
+        """Edit artwork: one image onto a whole album (songs and cover file), or onto chosen songs."""
+        from artwork import service
+        paths = body.get("paths")
+        return service.set_artwork(self.db_path, body.get("folder") or "", body.get("sha"),
+                                   paths=None if paths is None else list(paths), progress=report_progress("artwork"))
+
     def mb_apply(self, body):
         from musicbrainz import service
         progress = report_progress("musicbrainz")
@@ -626,14 +672,16 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- cover art -----------------------------------------------------------
 
-    def cover(self, track_id):
+    def cover(self, track_id, embedded_only=False):
+        """A song's cover: the folder's cover file if there is one, else the picture in the song (with
+        `embedded_only`, always the song's own, for showing which songs carry which art)."""
         with self.db() as conn:
             track = crud.tracks.get(conn, track_id)
             root = crud.get_root(conn)
         if track is None:
             return self.send(404, {"error": "no such track"})
         folder = os.path.join(root, track["folder"])
-        for name in os.listdir(folder):
+        for name in [] if embedded_only else os.listdir(folder):
             if name.lower() in COVER_NAMES:
                 with open(os.path.join(folder, name), "rb") as f:
                     return self.send(200, f.read(), mimetypes.guess_type(name)[0] or "image/jpeg")

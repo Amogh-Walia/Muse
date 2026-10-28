@@ -63,6 +63,22 @@ def search_releases(album, artist=None, limit=10, loose=False):
     return (_get("release/", {"query": query, "limit": limit}) or {}).get("releases", [])
 
 
+def recordings_by_isrc(isrc):
+    """The recordings carrying an ISRC (usually one)."""
+    return (_get(f"isrc/{isrc}", {}) or {}).get("recordings", [])
+
+
+def get_recording(recording_id):
+    """A recording with every release it's on, and each release's group (type: album, single, compilation…)."""
+    return _get(f"recording/{recording_id}", {"inc": "releases release-groups artist-credits"})
+
+
+def search_recordings(title, artist=None, limit=10):
+    """Recordings by title (and artist); search results include the releases they're on."""
+    query = f'recording:"{_quote(title)}"' + (f' AND artist:"{_quote(artist)}"' if artist else "")
+    return (_get("recording/", {"query": query, "limit": limit}) or {}).get("recordings", [])
+
+
 def get_release(release_id):
     """Full release: tracklist with recordings, artist credits, labels and release group."""
     return _get(f"release/{release_id}", {"inc": "recordings artist-credits labels release-groups"})

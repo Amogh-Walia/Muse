@@ -105,6 +105,24 @@
     </footer>
   </div>
 </div>
+<div id="artedit" role="dialog" aria-modal="true" aria-labelledby="ae-title">
+  <div class="modal">
+    <header>
+      <h2 id="ae-title">Edit artwork</h2>
+      <p class="lede" id="ae-lede">Loading…</p>
+    </header>
+    <div class="body" id="ae-body"></div>
+    <div class="progress" id="ae-progress" data-ops="artwork" hidden>
+      <div class="track" role="progressbar" aria-label="Artwork progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <footer>
+      <span class="msg" id="ae-msg" role="status"></span>
+      <button class="btn" id="ae-close">Close</button>
+      <button class="btn primary" id="ae-apply" disabled>Apply</button>
+    </footer>
+  </div>
+</div>
 <div id="clash" role="dialog" aria-modal="true" aria-labelledby="clash-title">
   <div class="modal clash-modal">
     <header>
@@ -129,8 +147,10 @@ const dur = s => { if (!s) return ""; s = Math.round(s); const h = s / 3600 | 0,
 const bytes = n => n > 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(1) + " MB";
 const quality = t => [t.ext?.toUpperCase?.() ?? t.formats?.toUpperCase(), t.bit_depth && t.bit_depth + "-bit", t.sample_rate && (t.sample_rate / 1000) + " kHz"].filter(Boolean).join(" · ");
 const api = p => fetch(p).then(r => r.json());
+// Cover images are cached by the browser; the version changes after artwork is edited, so pages show the new one.
+const coverUrl = (id, embeddedOnly) => `/cover/${id}?v=${state.artVersion}${embeddedOnly ? "&embedded=1" : ""}`;
 
-const state = { view: "albums", q: "", folder: null, sort: null, dir: "asc", albums: [], opsTab: "scrape" };
+const state = { view: "albums", q: "", folder: null, sort: null, dir: "asc", albums: [], opsTab: "scrape", artVersion: Date.now() };
 try { state.opsTab = localStorage.getItem("muse.opsTab") || state.opsTab; } catch {}  // remember the last sub-tab
 
 const COLS = [
@@ -154,7 +174,7 @@ function renderAlbums() {
   const list = state.albums.filter(a => !q || [a.folder, a.albums, a.artist, a.year].join(" ").toLowerCase().includes(q));
   $("#main").innerHTML = list.length ? `<div class="grid">${list.map(a => `
     <div class="album" data-folder="${esc(a.folder)}" title="${esc(a.folder)}">
-      <div class="art"><img loading="lazy" src="/cover/${a.cover_id}" onerror="this.replaceWith('♪')"></div>
+      <div class="art"><img loading="lazy" src="${coverUrl(a.cover_id)}" onerror="this.replaceWith('♪')"></div>
       <div class="t">${a.folder === "" ? "Loose files (library root)" : esc(a.albums)}</div>
       <div class="s">${esc(a.artist || "Unknown artist")}${a.year ? " · " + a.year : ""}</div>
       <div class="s">${a.tracks} tracks · ${dur(a.duration)} · ${esc(quality(a))}</div>
@@ -179,6 +199,7 @@ async function renderTracks() {
   const ndAlbum = rows.find(t => t.navidrome_album_id)?.navidrome_album_id;
   const crumb = state.folder !== null ? `<div class="crumb"><button id="back">← All albums</button><strong>${state.folder === "" ? "Loose files" : esc(rows[0]?.album || state.folder)}</strong><code>${esc(state.folder)}/</code>
     ${rows.some(canPlay) ? `<button class="btn" id="play-album">▶ Play album</button>` : ""}
+    ${state.folder ? `<button class="btn" id="edit-album-art">✎ Edit artwork</button>` : ""}
     ${ndAlbum && state.nd?.public_url ? `<a class="btn link" href="${esc(state.nd.public_url)}/app/#/album/${esc(ndAlbum)}/show" target="_blank" rel="noopener">Open in Navidrome ↗</a>` : ""}</div>` : "";
   $("#main").innerHTML = crumb + (rows.length ? `<div class="tablewrap"><table>
     <thead><tr>${COLS.map(([k, label, cls]) => `<th data-sort="${k}" class="${cls === "num" ? "num" : ""} ${state.sort === k ? "sorted" : ""}">${label}${state.sort === k ? (state.dir === "asc" ? " ↑" : " ↓") : ""}</th>`).join("")}</tr></thead>
@@ -198,7 +219,8 @@ async function showTrack(id) {
   const t = await api("/api/track/" + id);
   const props = [quality(t), t.channels && t.channels + " ch", t.bitrate && Math.round(t.bitrate / 1000) + " kbps", t.codec, dur(t.duration), bytes(t.size), t.has_cover ? "embedded art" : "no embedded art"];
   $("#detail").innerHTML = `<button class="close" aria-label="Close">×</button>
-    <img src="/cover/${t.id}" onerror="this.style.visibility='hidden'">
+    <img src="${coverUrl(t.id)}" onerror="this.style.visibility='hidden'">
+    <button class="btn" id="edit-track-art" data-folder="${esc(t.folder)}" data-path="${esc(t.path)}">✎ Edit artwork</button>
     <h2>${esc(t.title || t.filename)}</h2>
     <div class="sub">${esc(t.artist)} — ${esc(t.album)}${t.year ? " (" + t.year + ")" : ""}</div>
     <div class="chips">${props.filter(Boolean).map(p => `<span class="chip">${esc(p)}</span>`).join("")}</div>
@@ -216,7 +238,7 @@ async function showTrack(id) {
 
 document.addEventListener("click", e => {
   const el = e.target;
-  if (el.closest("#cleanup, #clash, #mb, #player, #appearance")) return;
+  if (el.closest("#cleanup, #clash, #mb, #player, #appearance, #artedit")) return;
   if (state.view === "ingest" && el.closest("#main") && !el.closest("tr[data-id]")) return;
   if (state.view === "transfer" && el.closest("#main")) return;  // its own handlers below
   if (el.closest("nav button")) { state.view = el.closest("nav button").dataset.view; state.folder = null; return render(); }
@@ -229,6 +251,8 @@ document.addEventListener("click", e => {
   if (el.closest(".play-btn")) { const id = +el.closest(".play-btn").dataset.id; const list = (state.rows || []).filter(canPlay);
     return playQueue(list, Math.max(0, list.findIndex(t => t.id === id))); }
   if (el.id === "play-album") return playQueue((state.rows || []).filter(canPlay), 0);
+  if (el.id === "edit-album-art") return openArtEdit(state.folder);
+  if (el.id === "edit-track-art") return openArtEdit(el.dataset.folder, el.dataset.path);
   if (el.closest("tbody tr[data-id]")) return showTrack(el.closest("tr").dataset.id);
   if (el.closest(".close")) return $("#detail").classList.remove("open");
   if (el.matches("dd.long")) el.classList.toggle("x");
@@ -236,6 +260,7 @@ document.addEventListener("click", e => {
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if ($("#appearance").classList.contains("open")) return closeAppearance(false);
+  if ($("#artedit").classList.contains("open")) return closeArtEdit();
   if ($("#clash").classList.contains("open")) return closeClash();
   if ($("#cleanup").classList.contains("open") && !$("#cleanup").classList.contains("inline")) return closeCleanup();
   if ($("#mb").classList.contains("open") && !$("#mb").classList.contains("inline")) return closeMb();
@@ -345,7 +370,9 @@ document.addEventListener("click", e => {
 // --- import / export tab ----------------------------------------------------------
 
 const xfer = { info: null, pickers: { import: { path: "", listing: null }, export: { path: "", listing: null } },
-               preview: null, move: true, selected: new Set(), filter: "", safe: true,
+               preview: null, move: true, filter: "", safe: true,
+               // export choices: whole albums by folder, and albums chosen song by song (folder -> song paths)
+               selected: new Set(), partial: new Map(), open: new Set(), tracks: new Map(),
                imp: { busy: false }, exp: { busy: false } };
 const joinPath = (a, b) => a.endsWith("/") ? a + b : a + "/" + b;
 
@@ -362,7 +389,6 @@ async function renderTransfer() {
   }
   if (state.view !== "transfer") return;
   const inbox = xfer.info.inbox, pv = xfer.preview;
-  const chosen = state.albums.filter(a => xfer.selected.has(a.folder)), size = chosen.reduce((n, a) => n + (a.size || 0), 0);
   $("#main").innerHTML = `<div class="transfer">
     <section id="imp">
       <h2>Import</h2>
@@ -393,15 +419,16 @@ async function renderTransfer() {
       <h2>Export</h2>
       <p class="muted">Copy albums to another folder: a USB stick, or a folder to burn to a DVD. They keep the library's structure (Artist/Year - Album/…) with
         their lyrics files and covers. The library isn't changed. Running an export again skips what's already copied, so an interrupted one picks up where it stopped.</p>
-      <div class="actions"><input type="search" id="exp-filter" placeholder="Find albums by name, artist or folder…" value="${esc(xfer.filter)}">
-        <button class="btn link" id="exp-all">Select all shown</button><button class="btn link" id="exp-none">Clear</button></div>
-      <div id="exp-list" class="exp-list">${exportListHtml()}</div>
-      <p><b>${plural(chosen.length, "album")}</b> selected, ${bytes(size)}.</p>
+      <div class="actions"><input type="search" id="exp-filter" placeholder="Find artists or albums…" value="${esc(xfer.filter)}">
+        <button class="btn link" id="exp-all">Select all shown</button><button class="btn link" id="exp-none">Clear</button>
+        <button class="btn link" id="exp-collapse">Collapse all</button></div>
+      <div id="exp-list" class="exp-list" role="tree" aria-label="Artists, albums and songs">${exportListHtml()}</div>
+      <p id="exp-summary">${exportSummary().text}.</p>
       <h3>Copy to</h3>
       ${pickerHtml("export")}
       <div class="actions">
         <label><input type="checkbox" id="exp-safe" ${xfer.safe ? "checked" : ""}> Make names safe for USB sticks, DVDs and Windows (replaces : ? * " and similar)</label>
-        <button class="btn primary" id="exp-run" ${chosen.length && xfer.pickers.export.listing?.writable ? "" : "disabled"}>Copy ${plural(chosen.length, "album")} (${bytes(size)})</button>
+        <button class="btn primary" id="exp-run" disabled>Copy</button>
         ${xfer.pickers.export.listing && !xfer.pickers.export.listing.writable ? `<span class="muted">Can't write to this folder.</span>` : ""}
       </div>
       <div class="progress" id="exp-progress" data-ops="export" hidden>
@@ -410,16 +437,117 @@ async function renderTransfer() {
       </div>
       <p class="muted" id="exp-msg" role="status"></p>
     </section></div>`;
+  afterExportDraw();
 }
 
+// Export choices as a tree: artist > album > song. Artists and albums are drawn only when opened, and an album's
+// songs are fetched when it's first opened, so a long library stays quick.
+const artistOf = a => a.artist || "Unknown artist";
+
+function exportGroups() {
+  const f = xfer.filter.toLowerCase(), groups = new Map();
+  for (const a of state.albums) {
+    if (!a.folder) continue;
+    const artist = artistOf(a);
+    if (f && !artist.toLowerCase().includes(f) && ![a.albums, a.folder].join(" ").toLowerCase().includes(f)) continue;
+    if (!groups.has(artist)) groups.set(artist, []);
+    groups.get(artist).push(a);
+  }
+  return [...groups].sort(([x], [y]) => x.localeCompare(y, undefined, { sensitivity: "base" }))
+    .map(([artist, albums]) => ({ artist, albums: albums.sort((x, y) => (x.year || 0) - (y.year || 0) || String(x.albums).localeCompare(String(y.albums))) }));
+}
+
+// "all", "some" or "none" of an album's songs chosen
+function albumChoice(folder) {
+  if (xfer.selected.has(folder)) return "all";
+  return xfer.partial.get(folder)?.size ? "some" : "none";
+}
+function groupChoice(albums) {
+  const states = albums.map(a => albumChoice(a.folder));
+  return states.every(s => s === "all") ? "all" : states.some(s => s !== "none") ? "some" : "none";
+}
+
+const treeToggle = (key, open, label) => `<button class="tree-toggle" data-toggle="${esc(key)}" aria-expanded="${open}" aria-label="${open ? "Collapse" : "Expand"} ${esc(label)}">${open ? "▾" : "▸"}</button>`;
+const treeBox = (cls, state, data) => `<input type="checkbox" class="${cls}" ${data} data-state="${state}" ${state === "all" ? "checked" : ""}>`;
+
 function exportListHtml() {
-  const f = xfer.filter.toLowerCase();
-  const shown = state.albums.filter(a => a.folder && (!f || [a.albums, a.artist, a.folder].join(" ").toLowerCase().includes(f)));
-  xfer.shown = shown.map(a => a.folder);
-  return shown.length ? shown.slice(0, 400).map(a => `<label class="exp-row"><input type="checkbox" class="exp-pick" data-folder="${esc(a.folder)}" ${xfer.selected.has(a.folder) ? "checked" : ""}>
-      <span>${esc(a.albums || a.folder)} <span class="muted">· ${esc(a.artist || "")}${a.year ? " · " + a.year : ""} · ${bytes(a.size || 0)}</span></span></label>`).join("") +
-      (shown.length > 400 ? `<p class="muted">${shown.length - 400} more: search to narrow it down.</p>` : "")
-    : `<p class="muted">No album matches.</p>`;
+  const groups = exportGroups(), filtering = !!xfer.filter;
+  xfer.shown = groups.flatMap(g => g.albums.map(a => a.folder));
+  if (!groups.length) return `<p class="muted">${state.albums.length ? "Nothing matches." : "The library is empty."}</p>`;
+  return groups.slice(0, 600).map(g => {
+    const open = filtering || xfer.open.has("a:" + g.artist);
+    return `<div class="tree-artist" role="treeitem" aria-expanded="${open}">
+      <div class="tree-row">${treeToggle("a:" + g.artist, open, g.artist)}
+        <label>${treeBox("exp-artist", groupChoice(g.albums), `data-artist="${esc(g.artist)}"`)} <b>${esc(g.artist)}</b>
+          <span class="muted">${plural(g.albums.length, "album")} · ${bytes(g.albums.reduce((n, a) => n + (a.size || 0), 0))}</span></label></div>
+      ${open ? `<div class="tree-children" role="group">${g.albums.map(exportAlbumHtml).join("")}</div>` : ""}</div>`;
+  }).join("") + (groups.length > 600 ? `<p class="muted">${groups.length - 600} more artists: search to narrow it down.</p>` : "");
+}
+
+function exportAlbumHtml(a) {
+  const open = xfer.open.has("f:" + a.folder), tracks = xfer.tracks.get(a.folder), choice = albumChoice(a.folder);
+  const picked = p => choice === "all" || !!xfer.partial.get(a.folder)?.has(p);
+  return `<div class="tree-album" role="treeitem" aria-expanded="${open}">
+    <div class="tree-row">${treeToggle("f:" + a.folder, open, a.albums || a.folder)}
+      <label>${treeBox("exp-album", choice, `data-folder="${esc(a.folder)}"`)} ${esc(a.albums || a.folder.split("/").pop())}
+        <span class="muted">${a.year ? a.year + " · " : ""}${plural(a.tracks, "song")} · ${bytes(a.size || 0)}</span></label></div>
+    ${open ? `<div class="tree-children" role="group">${!tracks ? `<p class="muted">Loading…</p>` : tracks.map(t => `<label class="tree-row tree-song">
+      <input type="checkbox" class="exp-track" data-folder="${esc(a.folder)}" data-path="${esc(t.path)}" ${picked(t.path) ? "checked" : ""}>
+      <span class="num">${t.disc_total > 1 && t.disc_no ? t.disc_no + "-" : ""}${t.track_no ?? ""}</span> ${esc(t.title || t.filename)}
+      <span class="muted">${dur(t.duration)} · ${bytes(t.size || 0)}</span></label>`).join("")}</div>` : ""}
+  </div>`;
+}
+
+// What's chosen: whole albums plus songs from albums chosen in part.
+function exportSummary() {
+  const byFolder = Object.fromEntries(state.albums.map(a => [a.folder, a]));
+  const albums = [...xfer.selected].filter(f => byFolder[f]);
+  const songs = [...xfer.partial].flatMap(([folder, paths]) => (xfer.tracks.get(folder) || []).filter(t => paths.has(t.path)));
+  const size = albums.reduce((n, f) => n + (byFolder[f].size || 0), 0) + songs.reduce((n, t) => n + (t.size || 0), 0);
+  const parts = [albums.length && plural(albums.length, "album"), songs.length && plural(songs.length, "song")].filter(Boolean);
+  return { albums, songs: songs.map(t => t.path), size, what: parts.join(" and "),
+           text: parts.length ? `<b>${parts.join(" and ")}</b> chosen, ${bytes(size)}` : "Nothing chosen yet: tick artists, albums or songs" };
+}
+
+// Redraw the tree and what's chosen, keeping the list's scroll position.
+function redrawExport() {
+  const list = $("#exp-list");
+  if (!list) return;
+  const top = list.scrollTop;
+  list.innerHTML = exportListHtml();
+  list.scrollTop = top;
+  afterExportDraw();
+}
+
+function afterExportDraw() {
+  document.querySelectorAll('#exp-list [data-state="some"]').forEach(b => b.indeterminate = true);
+  const sum = exportSummary(), run = $("#exp-run"), dest = xfer.pickers.export.listing;
+  if ($("#exp-summary")) $("#exp-summary").innerHTML = sum.text + ".";
+  if (run && !xfer.exp.busy) {
+    run.textContent = sum.what ? `Copy ${sum.what} (${bytes(sum.size)})` : "Copy";
+    run.disabled = !sum.what || !dest?.writable;
+  }
+}
+
+async function openExportAlbum(folder) {
+  if (xfer.tracks.has(folder)) return;
+  try { xfer.tracks.set(folder, await api("/api/tracks?" + new URLSearchParams({ folder }))); }
+  catch { xfer.tracks.set(folder, []); }
+  redrawExport();
+}
+
+// Tick or untick songs of an album; an album with all or none of its songs goes back to being whole or unchosen.
+function chooseSongs(folder, paths, on) {
+  const all = (xfer.tracks.get(folder) || []).map(t => t.path);
+  const chosen = new Set(xfer.selected.has(folder) ? all : xfer.partial.get(folder) || []);
+  paths.forEach(p => on ? chosen.add(p) : chosen.delete(p));
+  xfer.selected.delete(folder); xfer.partial.delete(folder);
+  if (all.length && chosen.size === all.length) xfer.selected.add(folder);
+  else if (chosen.size) xfer.partial.set(folder, chosen);
+}
+function chooseAlbum(folder, on) {
+  xfer.partial.delete(folder);
+  on ? xfer.selected.add(folder) : xfer.selected.delete(folder);
 }
 
 // A folder picker for folders on this machine (the server's, since that's where the files are).
@@ -464,24 +592,39 @@ $("#main").addEventListener("click", async e => {
     if (!confirm(`${xfer.move ? "Move" : "Copy"} ${plural(pv.songs, "song")} (${bytes(pv.bytes)}) from ${pv.source} into ${pv.target}/? Undo history can reverse it.`)) return;
     runJob("import", "/api/transfer/import", { source: pv.source, move: xfer.move });
   }
-  if (el.id === "exp-all") { xfer.shown.forEach(f => xfer.selected.add(f)); renderTransfer(); }
-  if (el.id === "exp-none") { xfer.selected.clear(); renderTransfer(); }
+  const toggle = el.closest("[data-toggle]");
+  if (toggle) {
+    const key = toggle.dataset.toggle;
+    xfer.open.has(key) ? xfer.open.delete(key) : xfer.open.add(key);
+    redrawExport();
+    if (key.startsWith("f:") && xfer.open.has(key)) openExportAlbum(key.slice(2));
+    return;
+  }
+  if (el.id === "exp-all") { xfer.shown.forEach(f => chooseAlbum(f, true)); redrawExport(); }
+  if (el.id === "exp-none") { xfer.selected.clear(); xfer.partial.clear(); redrawExport(); }
+  if (el.id === "exp-collapse") { xfer.open.clear(); redrawExport(); }
   if (el.id === "exp-run" && !xfer.exp.busy) {
-    const folders = [...xfer.selected], dest = xfer.pickers.export.path;
-    runJob("export", "/api/transfer/export", { folders, dest, safe: xfer.safe });
+    const sum = exportSummary();
+    runJob("export", "/api/transfer/export", { folders: sum.albums, tracks: sum.songs, dest: xfer.pickers.export.path, safe: xfer.safe });
   }
 });
 $("#main").addEventListener("change", e => {
   if (state.view !== "transfer") return;
   const el = e.target;
-  if (el.classList.contains("exp-pick")) { el.checked ? xfer.selected.add(el.dataset.folder) : xfer.selected.delete(el.dataset.folder); renderTransfer(); }
+  if (el.classList.contains("exp-artist")) {
+    const group = exportGroups().find(g => g.artist === el.dataset.artist);
+    (group ? group.albums : []).forEach(a => chooseAlbum(a.folder, el.checked));
+    redrawExport();
+  }
+  if (el.classList.contains("exp-album")) { chooseAlbum(el.dataset.folder, el.checked); redrawExport(); }
+  if (el.classList.contains("exp-track")) { chooseSongs(el.dataset.folder, [el.dataset.path], el.checked); redrawExport(); }
   if (el.name === "imp-mode") { xfer.move = el.value === "move"; renderTransfer(); }
   if (el.id === "exp-safe") xfer.safe = el.checked;
 });
 $("#main").addEventListener("input", e => {
   if (state.view !== "transfer" || e.target.id !== "exp-filter") return;
   xfer.filter = e.target.value;
-  $("#exp-list").innerHTML = exportListHtml();
+  redrawExport();
 });
 $("#main").addEventListener("keydown", e => {
   if (state.view === "transfer" && e.key === "Enter" && e.target.classList.contains("pick-path"))
@@ -562,7 +705,7 @@ function playAt(i) {
   audio.play().catch(() => {});  // autoplay refusals: the controls are there to press play
   $("#player").classList.add("on");
   document.body.classList.add("playing");
-  $("#player-art").src = `/cover/${t.id}`;
+  $("#player-art").src = coverUrl(t.id);
   loadLyrics(t);
   $("#player-title").textContent = t.title || t.filename;
   $("#player-sub").textContent = [t.artist, t.album].filter(Boolean).join(" — ") + (player.queue.length > 1 ? ` · ${i + 1} of ${player.queue.length}` : "");
@@ -894,6 +1037,102 @@ $("#main").addEventListener("click", async e => {
   }
 });
 
+// --- operations tab: remake Various Artists ------------------------------------------------
+
+const rm = { data: null, picked: null, off: new Set(), busy: false };
+
+async function loadRemake() {
+  const pane = $("#ops-pane");
+  if (pane && !rm.data) pane.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    const r = await fetch("/api/remake");
+    if (!r.ok) throw new Error("This needs the updated server: restart it with .venv/bin/python app.py");
+    rm.data = await r.json();
+  } catch (err) { if (pane) pane.innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
+  if (!rm.picked) rm.picked = new Set(rm.data.albums.filter(a => a.playlist).map(a => a.key));  // playlists, to start with
+  renderRemake();
+}
+
+function remakeRowHtml(r) {
+  const t = r.target, on = t && r.chosen !== "keep" && !rm.off.has(r.id);
+  const where = !r.status ? `<span class="muted">Not looked up yet.</span>`
+    : r.status === "error" ? `<span class="badge bad">Lookup failed</span> <span class="muted">${esc(r.how)}</span>`
+    : !r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> <span class="muted">It stays where it is.</span>`
+    : r.chosen === "keep" ? `<span class="muted">Left as it is.</span>`
+    : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new album in your library</span>`) +
+      (t.duplicate ? ` <span class="badge warn" title="${esc(t.duplicate)}">You already have this song</span> <span class="muted">Clean up shows the two copies to compare and keeps one.</span>` : "") +
+      (t.clashes_with?.length ? ` <span class="badge warn">Same song as ${esc(t.clashes_with.join(", "))}</span> <span class="muted">Clean up compares them.</span>` : "");
+  return `<div class="lyrics-row rm-row">
+    <input type="checkbox" class="rm-song" data-id="${r.id}" ${on ? "checked" : ""} ${t && r.chosen !== "keep" ? "" : "disabled"} aria-label="Remake ${esc(r.title)}">
+    <div><b>${esc(r.title)}</b> <span class="muted">· ${esc(r.artist || "")}${r.how && r.options.length ? ` · found by ${esc(r.how)}` : ""}</span>
+      ${r.options.length ? `<div><select class="rm-choice" data-id="${r.id}" aria-label="Album for ${esc(r.title)}">
+        ${r.options.map((o, i) => `<option value="${esc(o.release_id)}" ${r.chosen === o.release_id ? "selected" : ""}>${esc(o.label)}${i === 0 ? " (best match)" : ""}</option>`).join("")}
+        <option value="keep" ${r.chosen === "keep" ? "selected" : ""}>Leave this song as it is</option></select></div>` : ""}
+      <div class="rm-where">${where}</div></div></div>`;
+}
+
+function renderRemake() {
+  const pane = $("#ops-pane");
+  if (!pane || state.opsTab !== "remake" || !rm.data) return;
+  const albums = rm.data.albums, looked = albums.filter(a => a.looked_up);
+  const ready = looked.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !rm.off.has(r.id));
+  pane.innerHTML = `<div>
+    <h2>Remake Various Artists</h2>
+    <p class="muted">Some “albums” are really playlists, like Apple Music's <i>… Essentials</i>: every song has the right title and artist, but the album is the playlist.
+      Here each song is looked up on its own, by its ISRC (a code for the recording that most store-bought files carry) or else by title, artist and length,
+      and goes back to the album it first came out on, such as the film soundtrack rather than a later compilation. When that album is already in your library,
+      the song joins it. Songs you already have are flagged, and Clean up lets you compare the two copies. Nothing changes until you remake, and one Undo reverses it.</p>
+    <p class="muted"><b>Artwork:</b> remaking takes the songs' pictures out, since they're the playlist's cover rather than their album's. Their new albums then show up in
+      <a href="#" data-sub="art">Album art</a> as albums without art, ready to get their real covers (from the Cover Art Archive, or from songs of that album you already have).
+      Undo puts the old pictures back.</p>
+    ${albums.length ? `<h3>Albums (${albums.length})</h3>
+      ${albums.map(a => `<label class="lyrics-row" style="cursor:pointer"><input type="checkbox" class="rm-album" data-key="${esc(a.key)}" ${rm.picked.has(a.key) ? "checked" : ""}>
+        <div>${esc(a.album || a.folder)} <span class="muted">· ${plural(a.songs.length, "song")}${a.looked_up ? ` · ${a.looked_up} looked up` : ""}</span>
+          <span class="badge ${a.playlist ? "warn" : ""}">${esc(a.reason)}</span><br><code class="muted">${esc(a.folder)}</code></div></label>`).join("")}
+      <div class="actions"><button class="btn primary" id="rm-lookup" ${rm.picked.size ? "" : "disabled"}>Look up the songs</button>
+        <label><input type="checkbox" id="rm-refresh"> Look up again (songs already looked up)</label>
+        <span class="muted">About two seconds a song.</span></div>`
+      : `<p class="muted">Nothing to remake: no playlist-style or unlinked Various Artists albums.</p>`}
+    <div class="progress" id="rm-progress" data-ops="remake" hidden>
+      <div class="track" role="progressbar" aria-label="Remake progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="rm-msg" role="status"></p>
+    ${looked.length ? `<h3>Where the songs would go</h3>
+      ${looked.map(a => {
+        const found = a.songs.filter(r => r.target), dup = found.filter(r => r.target.duplicate || r.target.clashes_with?.length).length;
+        const missing = a.songs.filter(r => r.status && !r.options.length).length;
+        return `<details class="rm-group" open><summary><b>${esc(a.album || a.folder)}</b> <span class="muted">· ${found.length} of ${a.songs.length} found${dup ? ` · ${dup} you may already have` : ""}${missing ? ` · ${missing} not on MusicBrainz` : ""}</span></summary>
+          ${a.songs.map(remakeRowHtml).join("")}</details>`;
+      }).join("")}
+      <div class="actions" style="margin-top:12px"><button class="btn primary" id="rm-apply" ${ready.length ? "" : "disabled"}>Remake ${plural(ready.length, "song")}</button>
+        <span class="muted">Their tags are rewritten from the chosen album, their artwork is taken out (for Album art to replace), and they move into place;
+          songs whose place is taken stay for Clean up.</span></div>` : ""}
+  </div>`;
+}
+
+$("#main").addEventListener("change", async e => {
+  if (state.view !== "operations" || state.opsTab !== "remake" || rm.busy) return;
+  const el = e.target;
+  if (el.classList.contains("rm-album")) { el.checked ? rm.picked.add(el.dataset.key) : rm.picked.delete(el.dataset.key); renderRemake(); }
+  if (el.classList.contains("rm-song")) { el.checked ? rm.off.delete(+el.dataset.id) : rm.off.add(+el.dataset.id); renderRemake(); }
+  if (el.classList.contains("rm-choice")) {
+    el.disabled = true;
+    try { await post("/api/remake/choose", { track_id: +el.dataset.id, choice: el.value }); await loadRemake(); }
+    catch (err) { $("#rm-msg").textContent = err.message; el.disabled = false; }
+  }
+});
+$("#main").addEventListener("click", e => {
+  if (state.view !== "operations" || state.opsTab !== "remake" || rm.busy) return;
+  if (e.target.id === "rm-lookup") runJob("remake", "/api/remake/lookup", { keys: [...rm.picked], refresh: $("#rm-refresh").checked });
+  if (e.target.id === "rm-apply") {
+    const ids = rm.data.albums.flatMap(a => a.songs).filter(r => r.target && r.chosen !== "keep" && !rm.off.has(r.id)).map(r => r.id);
+    if (!confirm(`Remake ${plural(ids.length, "song")} into their own albums and move them into place? Their artwork is taken out, so the new albums ` +
+                 "show up in Album art to get their real covers. Undo history can reverse it.")) return;
+    runJob("remake", "/api/remake/apply", { track_ids: ids });
+  }
+});
+
 // --- appearance: accent colours, saved to .env ------------------------------------------
 
 const COLOR_NAMES = {
@@ -959,7 +1198,7 @@ $("#appearance").addEventListener("click", async e => {
 
 // --- operations tab: process steps and sub-tabs ------------------------------------
 
-const OPS_TABS = [["scrape", "Scrape Details"], ["art", "Album art"], ["lyrics", "Lyrics"], ["cleanup", "Clean up"], ["merge", "Merge albums"],
+const OPS_TABS = [["scrape", "Scrape Details"], ["art", "Album art"], ["lyrics", "Lyrics"], ["cleanup", "Clean up"], ["merge", "Merge albums"], ["remake", "Remake Various Artists"],
                   ["history", "Undo history"]];
 
 function goOps(tab) {
@@ -1019,6 +1258,7 @@ function renderOpsPane() {
   }
   if (state.opsTab === "lyrics") { pane.innerHTML = `<div id="lyrics-op">${lyricsOpHtml()}</div>`; return loadLyricsOp(); }
   if (state.opsTab === "merge") return loadMerge();
+  if (state.opsTab === "remake") return loadRemake();
   if (state.opsTab === "history") {
     pane.innerHTML = `<div id="house">${housekeepingHtml() || '<div class="empty">Loading…</div>'}</div>`;
     return loadHousekeeping().then(() => { if ($("#house")) $("#house").innerHTML = housekeepingHtml(); });
@@ -1029,6 +1269,7 @@ function renderOpsPane() {
 // After a job, refresh the visible pane's data (Clean up and Scrape Details reload themselves).
 async function refreshOpsPane() {
   if (state.opsTab === "merge") return loadMerge();
+  if (state.opsTab === "remake") return loadRemake();
   if (state.opsTab === "art") return loadArt();
   if (state.opsTab === "lyrics") return loadLyricsOp();
   if (state.opsTab === "history") { await loadHousekeeping(); if ($("#house")) $("#house").innerHTML = housekeepingHtml(); }
@@ -1103,7 +1344,7 @@ function albumArtRow(a) {
     </label>`;
   };
   return `<div class="art-album" data-i="${i}">
-    <div class="art-now">${a.cover_id ? `<img loading="lazy" src="/cover/${a.cover_id}" alt="Current cover">` : "No artwork"}</div>
+    <div class="art-now">${a.cover_id ? `<img loading="lazy" src="${coverUrl(a.cover_id)}" alt="Current cover">` : "No artwork"}</div>
     <div>
       <div class="t">${esc(a.album || "Unknown album")}</div>
       <div class="s">${esc(a.artist || "")} · ${a.lacking ? `${a.lacking} of ${a.songs} songs without art` : `all ${a.songs} songs have art`}
@@ -1127,25 +1368,130 @@ function updateArtCount() {
   btn.disabled = !n || art.busy;
 }
 
-async function uploadArt(i, file) {
-  const a = art.albums[i];
-  if (!file || !a) return;
-  if (!file.type.startsWith("image/")) return $("#art-msg").textContent = `${file.name} isn't an image.`;
-  if (file.size > MAX_PICK) return $("#art-msg").textContent = `${file.name} is larger than 25 MB.`;
-  $("#art-msg").textContent = `Adding ${file.name}…`;
+// Add an image from the user's drive as a cover candidate for album `key`. Returns {sha, width, height}.
+async function uploadImage(key, file) {
+  if (!file.type.startsWith("image/")) throw new Error(`${file.name} isn't an image.`);
+  if (file.size > MAX_PICK) throw new Error(`${file.name} is larger than 25 MB.`);
   const data = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1]);
     reader.onerror = () => reject(new Error(`Couldn't read ${file.name}.`));
     reader.readAsDataURL(file);
   });
+  return post("/api/art/upload", { key, name: file.name, data });
+}
+
+async function uploadArt(i, file) {
+  const a = art.albums[i];
+  if (!file || !a) return;
+  $("#art-msg").textContent = `Adding ${file.name}…`;
   try {
-    const r = await post("/api/art/upload", { key: a.key, name: file.name, data });
+    const r = await uploadImage(a.key, file);
     art.choices[a.key] = r.sha;  // what you just picked is what you want
     await loadArt();
     $("#art-msg").textContent = `Added ${file.name} (${r.width}×${r.height}) to ${a.album}.`;
   } catch (err) { $("#art-msg").textContent = err.message; }
 }
+
+// --- Edit artwork: one album's cover, or some of its songs' (album page and song panel) ---------------
+
+const ae = { data: null, sha: null, whole: true, picked: new Set(), busy: false };
+
+// One cover candidate as a radio card (shared look with the Album art tab).
+function candCard(c, name, checked) {
+  const warn = [Math.min(c.width, c.height) < LOW_RES && "Low resolution", Math.abs(c.width / c.height - 1) > 0.1 && "Not square"].filter(Boolean);
+  return `<label class="cand" title="${esc(c.label)}"><input type="radio" name="${name}" value="${c.sha}" ${checked ? "checked" : ""}>
+    <div class="img"><img loading="lazy" src="/art/${c.sha}" alt="${esc(c.label)}"></div>
+    <div class="meta"><b>${c.width}×${c.height}</b> · ${Math.round(c.bytes / 1024)} KB<br>${esc(c.label)}${warn.map(w => `<br><span class="badge warn">${w}</span>`).join("")}</div></label>`;
+}
+
+async function openArtEdit(folder, path = null) {
+  $("#artedit").classList.add("open");
+  $("#ae-lede").textContent = "Gathering the pictures in this album…";
+  $("#ae-body").innerHTML = "";
+  $("#ae-msg").textContent = "";
+  ae.folder = folder;
+  try { ae.data = await post("/api/art/folder", { folder }); }
+  catch (err) { $("#ae-lede").textContent = err.message; return; }
+  ae.sha = null;
+  ae.whole = !path;
+  ae.picked = new Set(path ? [path] : ae.data.songs.filter(s => s.can_embed).map(s => s.path));
+  renderArtEdit();
+}
+
+async function refreshArtEdit() {
+  if (!$("#artedit").classList.contains("open")) return;
+  try { ae.data = await post("/api/art/folder", { folder: ae.folder }); } catch { return; }
+  if (ae.sha && !ae.data.candidates.some(c => c.sha === ae.sha)) ae.sha = null;
+  renderArtEdit();
+}
+
+function closeArtEdit() { if (!ae.busy) $("#artedit").classList.remove("open"); }
+
+function renderArtEdit() {
+  const d = ae.data, embeddable = d.songs.filter(s => s.can_embed);
+  const n = ae.whole ? embeddable.length : [...ae.picked].length;
+  $("#ae-title").textContent = `Edit artwork · ${d.album || d.folder}`;
+  $("#ae-lede").textContent = `${d.artist || ""}${d.artist ? " · " : ""}${plural(d.songs.length, "song")} · ` +
+    (d.cover_file ? `cover file: ${d.cover_file}` : "no cover file in the folder");
+  const songRow = s => `<label class="ae-song ${s.can_embed ? "" : "muted"}">
+      ${ae.whole ? "" : `<input type="checkbox" class="ae-pick" data-path="${esc(s.path)}" ${ae.picked.has(s.path) ? "checked" : ""} ${s.can_embed ? "" : "disabled"}>`}
+      <span class="ae-thumb">${s.has_cover ? `<img loading="lazy" src="${coverUrl(s.id, true)}" alt="">` : "No art"}</span>
+      <span>${s.track_no ? s.track_no + ". " : ""}${esc(s.title)}${s.can_embed ? "" : ` <span class="badge">This format can't hold artwork</span>`}</span></label>`;
+  $("#ae-body").innerHTML = `
+    <h3>Choose a cover</h3>
+    <div class="cands">
+      ${d.candidates.map(c => candCard(c, "ae-cand", ae.sha === c.sha)).join("")}
+      <label class="cand from-drive"><input type="file" accept="image/*" id="ae-file" hidden>
+        <div class="img">+ Choose image…</div><div class="meta">From your drive</div></label>
+    </div>
+    <div class="actions"><button class="btn" id="ae-search">Search online</button>
+      <label><input type="checkbox" id="ae-itunes"> Also iTunes</label>
+      <span class="muted">${d.candidates.length ? "Found in the folder, in the songs, online, or added by you." : "Nothing in the folder or songs yet: search online or choose an image."}</span></div>
+    <h3>Put it on</h3>
+    <div class="actions">
+      <label><input type="radio" name="ae-scope" value="album" ${ae.whole ? "checked" : ""}> The whole album: every song, and the folder's cover file</label>
+      <label><input type="radio" name="ae-scope" value="songs" ${ae.whole ? "" : "checked"}> Only some songs</label>
+      ${ae.whole ? "" : `<button class="btn link" id="ae-all">All</button><button class="btn link" id="ae-bare">Those without art</button><button class="btn link" id="ae-none">None</button>`}
+    </div>
+    <div class="ae-songs">${d.songs.map(songRow).join("")}</div>`;
+  const apply = $("#ae-apply");
+  apply.disabled = ae.busy || !ae.sha || !n;
+  apply.textContent = !ae.sha ? "Choose a cover" : ae.whole ? "Use it for the whole album" : `Use it for ${plural(n, "song")}`;
+}
+
+$("#artedit").addEventListener("click", async e => {
+  const el = e.target;
+  if (el === $("#artedit") || el.id === "ae-close") return closeArtEdit();
+  if (ae.busy || !ae.data) return;
+  if (el.id === "ae-search") runJob("artedit", "/api/art/find", { online: true, itunes: $("#ae-itunes").checked, all: true, keys: [ae.data.key] });
+  if (el.id === "ae-all") { ae.picked = new Set(ae.data.songs.filter(s => s.can_embed).map(s => s.path)); renderArtEdit(); }
+  if (el.id === "ae-bare") { ae.picked = new Set(ae.data.songs.filter(s => s.can_embed && !s.has_cover).map(s => s.path)); renderArtEdit(); }
+  if (el.id === "ae-none") { ae.picked.clear(); renderArtEdit(); }
+  if (el.id === "ae-apply") {
+    const n = ae.whole ? ae.data.songs.filter(s => s.can_embed).length : ae.picked.size;
+    if (!confirm(`Put this cover on ${ae.whole ? `the whole album (${plural(n, "song")} and the folder's cover file)` : plural(n, "song")}, replacing the art there? ` +
+                 "Phone apps download changed songs again. Undo history can reverse it.")) return;
+    runJob("artedit", "/api/art/set", { folder: ae.data.folder, sha: ae.sha, paths: ae.whole ? null : [...ae.picked] });
+  }
+});
+$("#artedit").addEventListener("change", async e => {
+  const el = e.target;
+  if (ae.busy || !ae.data) return;
+  if (el.name === "ae-cand") { ae.sha = el.value; renderArtEdit(); }
+  if (el.name === "ae-scope") { ae.whole = el.value === "album"; renderArtEdit(); }
+  if (el.classList.contains("ae-pick")) { el.checked ? ae.picked.add(el.dataset.path) : ae.picked.delete(el.dataset.path); renderArtEdit(); }
+  if (el.id === "ae-file" && el.files[0]) {
+    $("#ae-msg").textContent = `Adding ${el.files[0].name}…`;
+    try {
+      const r = await uploadImage(ae.data.key, el.files[0]);
+      await refreshArtEdit();
+      ae.sha = r.sha;
+      renderArtEdit();
+      $("#ae-msg").textContent = `Added ${el.files[0].name} (${r.width}×${r.height}).`;
+    } catch (err) { $("#ae-msg").textContent = err.message; }
+  }
+});
 
 $("#main").addEventListener("change", e => {
   if (state.view !== "operations") return;
@@ -1571,10 +1917,11 @@ $("#mb").addEventListener("click", async e => {
 
 const UNITS = { apply: "songs", undo: "steps", scan: "files" };
 const JOB_NAMES = { apply: "cleanup", undo: "undo", scan: "scan", musicbrainz: "Scrape Details run", artwork: "artwork run",
-                    lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge", import: "import", export: "export" };
+                    lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge", import: "import", export: "export",
+                    remake: "remake" };
 // Where each job is started from: the header indicator takes you there.
 const JOB_HOME = { apply: "cleanup", undo: "history", musicbrainz: "scrape", artwork: "art", lyrics: "lyrics", merge: "merge",
-                   housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer" };
+                   housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer", remake: "remake" };
 const TOP_VIEWS = ["ingest", "transfer"];  // homes that are whole tabs rather than Operations sub-tabs
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -1603,6 +1950,9 @@ const JOB_TEXT = {
     label: b => b.online ? "Searching… (online lookups take a couple of seconds per album)" : "Looking for covers already in your album folders and songs…",
     done: r => `Looked at ${r.albums} albums: ${r.with_candidates} have candidates.` +
       (r.errors.length ? ` ${r.errors.length} online lookups failed (${r.errors[0]}).` : "") },
+  "/api/art/set": { op: "artwork", label: "Putting the cover on…",
+    done: r => (r.whole_album ? `The whole album has the new cover: ${plural(r.stats.songs || 0, "song")}` : `${plural(r.stats.songs || 0, "song")} have the new cover`) +
+      (r.stats.cover_files ? " and the folder's cover file" : "") + (r.stats.unsupported ? ` (${r.stats.unsupported} in formats that can't hold artwork)` : "") + "." },
   "/api/art/apply": { op: "artwork", label: "Embedding artwork…",
     done: r => `Done: artwork embedded in ${r.stats.songs || 0} songs across ${r.stats.albums || 0} albums` +
       (r.stats.cover_files ? `, ${r.stats.cover_files} cover files saved` : "") + (r.stats.unsupported ? `, ${r.stats.unsupported} songs in formats without artwork support` : "") + "." },
@@ -1620,6 +1970,14 @@ const JOB_TEXT = {
   "/api/transfer/export": { op: "export", label: "Copying…",
     done: r => `Copied ${plural(r.copied, "file")} (${bytes(r.bytes)}) to ${r.dest}` + (r.already_there ? `; ${r.already_there} were already there` : "") +
       `. ${bytes(r.free_after)} free there now.` },
+  "/api/remake/lookup": { op: "remake", label: "Looking the songs up on MusicBrainz (about two seconds a song)…",
+    done: r => r.songs ? `Looked up ${plural(r.songs, "song")}: ${r.found || 0} found, ${r.none || 0} not on MusicBrainz` +
+      (r.error ? `, ${r.error} failed (try again later)` : "") + ". Check where they'd go below."
+      : "Every song of these albums has been looked up. Tick “Look up again” to refresh." },
+  "/api/remake/apply": { op: "remake", label: "Remaking…",
+    done: r => `Remade ${plural(r.stats.remade || 0, "song")}` + (r.stats.joined ? ` (${r.stats.joined} joined albums you have)` : "") +
+      `, ${r.stats.moved || 0} moved into place` + (r.stats.art_removed ? `, artwork taken out of ${r.stats.art_removed}: get their real covers in Album art` : "") + (r.clashes ? `. ${r.clashes} may be songs you already have: Clean up shows them to compare` : "") +
+      (r.stats.folders_emptied ? `. ${plural(r.stats.folders_emptied, "emptied playlist folder")} went to the trash` : "") + "." },
   "/api/merge/apply": { op: "merge", label: "Merging…",
     done: r => `Merged: ${r.stats.retagged || 0} songs retagged, ${r.stats.moved || 0} moved.` +
       (r.warnings.length ? " Some songs share a track number: Clean up shows them as duplicates to compare." : "") },
@@ -1636,6 +1994,10 @@ const PANES = {
          reload: async () => { await loadLibrary(); await loadArt(); }, after: () => updateArtCount() },
   lyrics: { ops: ["lyrics"], state: lyr, buttons: "#lyrics-op button", msg: "#lyr-msg",
             reload: async () => { await loadLyricsOp(); await loadLibrary(); } },
+  artedit: { ops: ["artwork"], state: ae, buttons: "#artedit button, #artedit input", msg: "#ae-msg",
+             reload: async () => { state.artVersion = Date.now(); await refreshArtEdit(); await loadLibrary(); } },
+  remake: { ops: ["remake"], state: rm, buttons: "#ops-pane button, #ops-pane select", msg: "#rm-msg",
+            reload: async () => { await loadLibrary(); await loadRemake(); } },
   merge: { ops: ["merge"], state: merge, buttons: "#ops-pane button", msg: "#merge-msg",
            reload: async () => { await loadLibrary(); await loadMerge(); } },
   history: { ops: ["undo", "housekeeping"], state: { busy: false }, buttons: "#house button", msg: "#house-msg",

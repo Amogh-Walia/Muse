@@ -106,6 +106,24 @@ def albums(conn):
     return [dict(r) for r in rows]
 
 
+def album_artists(conn):
+    """Every album artist in the library as spelled in the tags, with its MusicBrainz artist id when the files
+    have one: [(name, id or None)], most used first."""
+    return [tuple(r) for r in conn.execute("""
+        SELECT t.album_artist, g.value FROM tracks t
+        LEFT JOIN tags g ON g.track_id = t.id AND lower(g.key) IN ('musicbrainz_albumartistid', 'musicbrainz album artist id')
+        WHERE t.album_artist IS NOT NULL GROUP BY t.album_artist, g.value ORDER BY count(*) DESC""")]
+
+
+def tag_lookup(conn, keys):
+    """{track id: {key: first value}} for raw tags named `keys` (lower case), whatever case the file used."""
+    out = {}
+    marks = ", ".join("?" * len(keys))
+    for track_id, key, value in conn.execute(f"SELECT track_id, lower(key), value FROM tags WHERE lower(key) IN ({marks})", keys):
+        out.setdefault(track_id, {}).setdefault(key, value)
+    return out
+
+
 def by_album(conn):
     """Library songs grouped the way the cleanup groups them: (folder, album tag)."""
     groups = {}

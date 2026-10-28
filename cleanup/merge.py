@@ -13,8 +13,8 @@ import os
 import crud
 import scan
 
-from . import apply as applier, plan as planner, rules, tags
-from .apply import JOURNAL_DIR, LYRICS_SIDECARS, _carry_leftovers, _move, _move_track
+from . import apply as applier, rules, tags
+from .apply import JOURNAL_DIR
 
 ALBUM_FIELDS = ("album", "albumartist", "date", "originaldate",
                 "musicbrainz_albumid", "musicbrainz_releasegroupid", "musicbrainz_albumartistid")
@@ -96,7 +96,7 @@ def ignore(conn, keys, reason=None):
     crud.merges.ignore(conn, keys, described, reason)
 
 
-def _target_values(root, songs):
+def album_values(root, songs):
     """The album-level tags of the album being kept: for each field, the value most of its songs have."""
     counts = {f: collections.Counter() for f in ALBUM_FIELDS}
     for s in songs:
@@ -111,7 +111,7 @@ def preview(conn, root, keys, target_key):
     groups = _groups(conn)
     if target_key not in keys or len(set(keys)) < 2 or any(k not in groups for k in keys):
         raise ValueError("pick at least two albums, one of them to keep")
-    target = _target_values(root, groups[target_key])
+    target = album_values(root, groups[target_key])
     target_release = (target["musicbrainz_albumid"] or [None])[0]
     songs, positions = [], collections.defaultdict(list)
     for key in keys:
@@ -153,20 +153,7 @@ def apply(db_path, keys, target_key, move=True, progress=_no_progress):
             stats["retagged"] += 1
         if move:
             progress(len(work), len(work) + 1, "Bringing the songs together in one folder…")
-            merged = {s["path"] for s in result["songs"]}
-            for album in planner.build(root)["albums"]:
-                for t in album["tracks"]:
-                    if t["path"] in merged and t["new_path"] != t["path"] and not t["clash"] \
-                            and not os.path.exists(os.path.join(root, t["new_path"])):
-                        _move_track(conn, root, t["path"], t["new_path"], entries)
-                        for ext in LYRICS_SIDECARS:
-                            sidecar = os.path.splitext(t["path"])[0] + ext
-                            if os.path.exists(os.path.join(root, sidecar)):
-                                _move(root, sidecar, os.path.splitext(t["new_path"])[0] + ext, entries, "extra")
-                        scan.refresh(conn, root, t["new_path"])
-                        conn.commit()
-                        stats["moved"] += 1
-            _carry_leftovers(root, entries)
+            stats["moved"] += applier.move_into_place(conn, root, [s["path"] for s in result["songs"]], entries)
         crud.releases.recompute(conn)
     finally:
         conn.commit()

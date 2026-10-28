@@ -117,6 +117,8 @@ def release_summary(release):
         "artist": names[0] if names else None,
         "artist_credit": "".join(c["name"] + c.get("joinphrase", "") for c in release.get("artist-credit") or []),
         "artist_ids": credit_ids(release.get("artist-credit")),
+        # the artists' own names: a release may credit them differently ("Vishal & Shekhar" for Vishal–Shekhar)
+        "artist_names": [rules.normalize(c["artist"]["name"]) for c in release.get("artist-credit") or [] if c.get("artist")],
         "date": release.get("date"),
         "original_date": group.get("first-release-date"),
         "country": release.get("country"),

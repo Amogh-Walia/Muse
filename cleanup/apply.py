@@ -145,6 +145,28 @@ def _no_progress(done, total, message):
     pass
 
 
+def move_into_place(conn, root, paths, entries):
+    """Move the songs at `paths` to their clean locations, as Clean up would, with their lyrics files; then
+    an emptied folder's covers and logs follow. A song whose place is taken is left where it is: that name
+    clash is Clean up's to compare. Journals into `entries`; returns how many songs moved."""
+    from . import plan as planner
+    paths, moved = set(paths), 0
+    for album in planner.build(root)["albums"]:
+        for t in album["tracks"]:
+            if t["path"] in paths and t["new_path"] != t["path"] and not t["clash"] \
+                    and not os.path.exists(os.path.join(root, t["new_path"])):
+                _move_track(conn, root, t["path"], t["new_path"], entries)
+                for ext in LYRICS_SIDECARS:
+                    sidecar = os.path.splitext(t["path"])[0] + ext
+                    if os.path.exists(os.path.join(root, sidecar)):
+                        _move(root, sidecar, os.path.splitext(t["new_path"])[0] + ext, entries, "extra")
+                scan.refresh(conn, root, t["new_path"])
+                conn.commit()
+                moved += 1
+    _carry_leftovers(root, entries)
+    return moved
+
+
 def apply(plan, db_path, selected=None, fix_tags=True, rename=True, progress=_no_progress, resolutions=None):
     """Apply the plan to the tracks whose paths are in `selected` (all when None), updating the catalog as it goes.
 
@@ -286,6 +308,9 @@ def undo(db_path, journal_path=None, progress=_no_progress):
                 crud.tracks.delete(conn, e["path"])
                 _remove_empty_dirs(root, os.path.dirname(e["path"]))
                 counts["imports_undone"] += 1
+            elif e["op"] == "removed":  # a file set aside (a folder cover being replaced): put it back
+                shutil.copyfile(os.path.join(JOURNAL_DIR, e["backup"]), os.path.join(root, e["path"]))
+                counts["files_restored"] += 1
             elif e["op"] == "created":  # a cover.jpg written next to the songs
                 if os.path.exists(os.path.join(root, e["path"])):
                     os.remove(os.path.join(root, e["path"]))
@@ -293,6 +318,7 @@ def undo(db_path, journal_path=None, progress=_no_progress):
             conn.commit()
         if journal.get("kind") == "artwork":
             crud.artwork.forget(conn, journal.get("albums", []))
+        if journal.get("backup"):  # pictures kept for this undo: put back now, so no longer needed
             shutil.rmtree(os.path.join(JOURNAL_DIR, journal["backup"]), ignore_errors=True)
         os.rename(journal_path, journal_path[:-len(".json")] + ".undone.json")
         progress(len(entries), len(entries), "Checking the catalog against the disk…")

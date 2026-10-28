@@ -38,6 +38,21 @@ ALBUM_ID_KEYS = ("musicbrainz_albumid", "musicbrainz album id")
 RELEASE_GROUP_KEYS = ("musicbrainz_releasegroupid", "musicbrainz release group id")
 
 
+def release_groups_by_folder(conn):
+    """{folder: {release group id: release id the songs are on, or None}}: what each album folder already is,
+    from releases applied in Muse and from MusicBrainz ids in the files (e.g. tagged with Picard)."""
+    out = {}
+    for folder, group, release in conn.execute("""SELECT t.folder, r.mb_release_group_id, t.mb_album_id FROM tracks t
+                                                  JOIN releases r ON r.mb_release_id = t.mb_album_id
+                                                  WHERE r.mb_release_group_id IS NOT NULL"""):
+        out.setdefault(folder, {})[group] = release
+    folders = dict(conn.execute("SELECT id, folder FROM tracks"))
+    for track_id, groups in _ids_by_track(conn, RELEASE_GROUP_KEYS).items():
+        for group in groups:
+            out.setdefault(folders[track_id], {}).setdefault(group, None)
+    return out
+
+
 def _ids_by_track(conn, keys):
     valid = VALID_ID_SQL.format(col="value")
     out = collections.defaultdict(set)

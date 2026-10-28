@@ -15,6 +15,7 @@ Muse is a small Python web app with no web framework: `http.server` from the sta
 | `crud/` | **All** database access. Nothing else runs SQL. |
 | `cleanup/` | Regex rules for tags and file names, the planner, apply/undo with journals, clash comparison, ingestion status. It's also a CLI (`python -m cleanup`). |
 | `musicbrainz/` | Rate-limited MusicBrainz client, release matching, proposals, and alignment of mixed editions. |
+| `musicbrainz/remake.py` | Remake Various Artists: finds playlist-style albums, looks their songs up one by one (ISRC, else title/artist/length), ranks each song's releases, and writes and moves the chosen ones. |
 | `artwork/` | Cover candidates (folder, embedded, Cover Art Archive, iTunes, uploads), image checks and resizing, and embedding. |
 | `lyrics/` | Where a song's lyrics are (`.lrc`, `.txt`, embedded) and what kind, the LRCLIB client, saving lyrics files, orphaned `.lrc` files, and parsing synced lyrics for the player. |
 | `transfer/` | Import (a folder from anywhere on this machine into the inbox, journaled for undo) and export (album folders copied out, keeping the library's structure), plus the folder picker's listing. |

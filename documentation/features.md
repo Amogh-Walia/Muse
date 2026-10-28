@@ -85,6 +85,19 @@ A song's existing front cover is replaced, even a broken one players ignore; oth
 
 Journal names carry microseconds, so two runs in the same second can't overwrite each other's journal.
 
+### Edit artwork (album page and song details)
+
+An album's page has **✎ Edit artwork**, and so does each song's details panel. It opens one dialog for that album folder.
+
+- **Choose a cover:** the folder's images and every different picture embedded in its songs (gathered when the dialog opens), plus **Search online** (Cover Art Archive, optionally iTunes) and **Choose image…** from your drive.
+- **Put it on:**
+  - **the whole album**, which covers every song and the folder's cover file. An existing `cover.jpg` (or `folder.jpg`, `front.jpg`) is set aside and replaced, since Navidrome shows the folder's file for the album.
+  - **only some songs**, with each song's current picture shown next to it. From a song's panel, that song comes pre-ticked.
+- **What it replaces:** whatever art the chosen songs had. Songs in formats that can't hold pictures (WAV, for instance) are marked and skipped.
+- **Undo:** each change is one entry in Undo history, which puts back exactly the pictures and cover file there were.
+
+Changing a song's artwork changes the file, so phone apps that keep songs offline download it again.
+
 ## Lyrics
 
 Each song's lyrics status is kept in the catalog: **synced** (timed lines), **plain**, or none. It also records where the best copy is: a `.lrc` file next to the song, a `.txt` file, or embedded in the tags. Synced beats plain wherever it is. The status is refreshed at startup and after every job, because lyrics files can appear without the song changing.
@@ -107,6 +120,34 @@ Suggestions come from three checks:
 
 The last check also catches real sequels and editions ("The Marshall Mathers LP 2"). **This is fine, ignore** stops a suggestion coming back. It applies to that exact set of albums, so a new album joining the group brings the suggestion back. Ignored suggestions are listed under the suggestions, each with **Suggest again**.
 
+## Remake Various Artists
+
+Some "albums" are really playlists, such as Apple Music's *… Essentials* or *Radio Hits*. Each song carries the right title and artist, but the album is the playlist, so everything files under `Various Artists/`. Operations → **Remake Various Artists** sends each song back to its own album.
+
+- **Which albums are offered:**
+  - Albums whose songs carry an Apple Music playlist id (`ITUNESALBUMID` starting `pl.`) or are named like a playlist (*Essentials*, *Playlist*, *Radio Hits*). These are pre-selected.
+  - Albums filed as Various Artists that aren't linked to MusicBrainz, which you can tick too.
+- **How songs are looked up:** each song is looked up on MusicBrainz by its **ISRC**, a code for the recording that most store-bought files carry. Without an ISRC, or when MusicBrainz doesn't know it, the lookup searches by title and artist and checks the length (within 8 seconds). That's two requests a song, at MusicBrainz's one a second. The lookup can be stopped and continued, and results are kept, so it isn't repeated.
+- **How the album is chosen:** every release the recording is on is an option, ranked:
+  1. one already in your library (same release group, or an album of the same name);
+  2. not a compilation, live album or remix;
+  3. official, and an album before an EP or single;
+  4. the earliest, so a film song goes to its soundtrack rather than a later re-release;
+  5. shared with the other songs looked up together.
+
+  The best one is chosen. A dropdown offers the others (one edition per release group) and "Leave this song as it is".
+- **Clashes are flagged before anything changes:**
+  - **Joining an album you have:** the song files under that album's own name, album artist and dates, so it lands in the same folder.
+  - **You already have the song** in that album: it's flagged. It's still remade, but it can't move onto the existing file, so it waits for Clean up, which shows both copies to compare and keeps one.
+  - **Two songs remade into the same album under the same title**, for example the same song in two playlists: flagged the same way.
+  - **Artist spelling:** an artist already in the library keeps its spelling. It's matched by MusicBrainz artist id, else by name, so a release crediting "Vishal & Shekhar" doesn't open a second folder next to `Vishal-Shekhar`. For joint credits, the main (first) artist is used.
+- **Remake:**
+  - The chosen songs get the release's tags (album, album artist, dates, track and disc numbers, MusicBrainz ids) and move into place like Clean up, with their lyrics files.
+  - Their **artwork is taken out**: it's the playlist's cover (every song of an Apple playlist carries the same picture), not their album's. Without art, their new albums show up in **Album art** as albums to give a cover, from the Cover Art Archive or from songs of that album you already have. The old pictures are kept for Undo.
+  - A playlist folder left without songs has its leftovers (the playlist's cover) moved to the trash.
+  - It's one entry in Undo history, and the lookups are kept, so an undone remake can be redone without looking up again.
+  - Songs MusicBrainz doesn't have stay where they are.
+
 ## Import / Export
 
 **Import** brings a folder of music into the inbox in one go. Pick the folder with the folder picker, which shows mounted drives such as USB sticks, then **Check this folder** to see how many songs it holds and where they'll go.
@@ -118,7 +159,9 @@ The last check also catches real sequels and editions ("The Marshall Mathers LP 
 - **Stopping:** an import can be stopped; whatever was already brought in stays, and Continue carries on.
 - **Refused folders:** a folder inside the library, or one containing it.
 
-**Export** copies album folders out of the library: tick albums (search narrows the list), pick a destination folder, and copy.
+**Export** copies music out of the library. Choose from a collapsible tree of artists → albums → songs, then pick a destination folder and copy.
+- **Choosing:** ticking an artist chooses all its albums, ticking an album chooses all its songs, and a half-filled box means only some are chosen. An album's songs are loaded when you open it, so long libraries stay quick. Search narrows the tree to matching artists and albums, opening them. "Select all shown" chooses everything matching the search.
+- **A single song** comes with its own lyrics files and its album's cover, cue sheet and other shared files. Other songs' lyrics stay behind.
 - **Structure:** albums keep the library's structure (`Artist/Year - Album/…`) with their lyrics files and covers.
 - **Safe names:** on by default, this replaces the characters FAT/exFAT USB sticks, DVDs and Windows reject (`: ? * " < > | \`), so `Delhi Belly: Soundtrack` becomes `Delhi Belly - Soundtrack`.
 - **Before copying:** free space is checked first. Files are copied under a temporary name and renamed when complete, so a stopped or failed export never leaves half files.

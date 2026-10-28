@@ -138,6 +138,23 @@ CREATE TABLE IF NOT EXISTS artwork (
     songs      INTEGER,
     applied_at TEXT
 );
+-- "Remake Various Artists": each song of a playlist-style album, looked up on its own. options: every release
+-- its recording is on (JSON); chosen: a release id picked by hand, "keep" to leave the song alone, or NULL (best).
+CREATE TABLE IF NOT EXISTS remake_songs (
+    track_id     INTEGER PRIMARY KEY,
+    isrc         TEXT,
+    status       TEXT,
+    how          TEXT,
+    options      TEXT,
+    chosen       TEXT,
+    fetched_at   TEXT
+);
+-- Full details of releases songs may be remade into (fetched once, shared by the songs on them)
+CREATE TABLE IF NOT EXISTS remake_releases (
+    release_id TEXT PRIMARY KEY,
+    summary    TEXT,
+    fetched_at TEXT
+);
 -- Merge suggestions marked "this is fine" (signature: the album keys, sorted, joined by \x01)
 CREATE TABLE IF NOT EXISTS merge_ignored (
     signature  TEXT PRIMARY KEY,
