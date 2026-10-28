@@ -1,7 +1,7 @@
 """Run with: python3 -m unittest cleanup.test_rules  (examples are real tags from the library)"""
 import unittest
 
-from cleanup.rules import clean_album, clean_date, clean_title, normalize, safe_name, split_artists
+from cleanup.rules import clean_album, clean_date, clean_title, from_album, normalize, safe_name, split_artists
 
 
 class Artists(unittest.TestCase):
@@ -58,6 +58,25 @@ class Titles(unittest.TestCase):
         for raw, expected in self.cases.items():
             with self.subTest(raw=raw):
                 self.assertEqual(clean_title(raw), expected)
+
+
+class FromAlbum(unittest.TestCase):
+    def test_from_album(self):
+        cases = {
+            'Main Agar Kahoon (From "Om Shanti Om")': ("Main Agar Kahoon", "Om Shanti Om"),
+            "Dekhte Dekhte (From 'Batti Gul Meter Chalu')": ("Dekhte Dekhte", "Batti Gul Meter Chalu"),
+            'Pyaar Tenu Karda Gabru (From "Shubh Mangal Zyada Saavdhan"': ("Pyaar Tenu Karda Gabru", "Shubh Mangal Zyada Saavdhan"),
+            'Celebrate (from the original motion picture "Penguins of Madagascar")': ("Celebrate", "Penguins of Madagascar"),
+            "Ma Meilleure Ennemie (from the series Arcane League of Legends)": ("Ma Meilleure Ennemie", "Arcane League of Legends"),
+            "Aadat [From Kalyug]": ("Aadat", "Kalyug"),
+            "Main Agar Kahoon (From _Om Shanti Om_)": ("Main Agar Kahoon", "Om Shanti Om"),
+        }
+        for title, expected in cases.items():
+            self.assertEqual(from_album(title), expected, title)
+
+    def test_not_from(self):
+        for title in ("From the Start", "Far From Home", "Fromage", "Song (Live)"):
+            self.assertEqual(from_album(title), (title, None), title)
 
 
 class Albums(unittest.TestCase):

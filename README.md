@@ -5,6 +5,8 @@
 ## Features
 
 - **Catalog:** every audio file (FLAC, MP3, M4A/ALAC, Ogg, Opus, WAV, …) with its full tags and audio properties, browsable by album and track, with cover art.
+- **Artists:** every album artist with their albums, EPs and singles kept apart, plus the albums by others they appear on, and an artist picture (from Deezer, Wikimedia Commons or your drive) saved as `artist.jpg` where Navidrome shows it.
+- **Singles:** any song can be made a single of its own (song details → *Make it a single*): a one-song release by its main artist, tagged as a single, in its own folder.
 - **Ingest:** see which files on disk aren't catalogued yet and which songs haven't been organized, and scan with one click.
 - **Inbox:** new downloads land in an inbox folder inside the library that Navidrome doesn't see, so songs reach your phone only once they're processed.
 - **Import / Export:**

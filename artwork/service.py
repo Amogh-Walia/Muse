@@ -104,7 +104,8 @@ def add_upload(db_path, key, name, data):
     """Add an image picked from the user's drive as a candidate for album `key`."""
     conn = crud.connect(db_path)
     try:
-        if key not in _groups(conn):
+        from . import artists
+        if key not in _groups(conn) and not artists.is_key(key):
             raise LookupError("no such album")
         sha, mime, width, height = images.store(data)
         crud.artwork.add_candidate(conn, key, "upload", f"From your drive: {os.path.basename(name or 'image')}",

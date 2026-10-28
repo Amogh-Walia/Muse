@@ -55,11 +55,24 @@ def albums_to_fetch(conn, refresh=False):
     return out
 
 
-def _search(album, artist):
-    """Search in stages, from most to least specific, stopping at the first that finds anything."""
+def from_hint(album, songs):
+    """The album these songs say they're from: 'Song (From "Film")' in the album name, or in every song's title."""
+    hint = rules.from_album(album or "")[1]
+    if hint:
+        return hint
+    hints = {rules.from_album(s["title"] or "")[1] for s in songs}
+    return hints.pop() if len(hints) == 1 and None not in hints else None
+
+
+def _search(album, artist, hint=None):
+    """Search in stages, from most to least specific, stopping at the first that finds anything. Returns the
+    candidates, how they were found, and the title they were searched by (to rank them against)."""
     by = None if not artist or rules.is_various(artist) else artist
     title, simple = rules.clean_album(album), match.simplify_album(rules.clean_album(album))
-    stages = [("search: title + artist", title, by, False)]
+    stages = []
+    if hint:  # the album the songs say they're from comes first: a film song belongs on its soundtrack
+        stages.append((f'search: the album it\'s from ("{hint}")', rules.clean_album(hint), None, False))
+    stages.append(("search: title + artist", title, by, False))
     if simple != title:
         stages.append(("search: simplified title + artist", simple, by, False))
     if by:
@@ -67,8 +80,8 @@ def _search(album, artist):
     for how, query, query_artist, loose in stages:
         candidates = client.search_releases(query, query_artist, loose=loose)
         if candidates:
-            return candidates, how
-    return [], "search"
+            return candidates, how, query
+    return [], "search", title
 
 
 def album_facts(songs):
@@ -93,11 +106,11 @@ def best_match(songs, prefer=()):
     known = [rid for rid, _ in counts.most_common() if rid in prefer]
     if known:
         return known[0], None, "the edition this album is already linked to"
-    candidates, how = _search(album, artist)
+    candidates, how, searched = _search(album, artist, from_hint(album, songs))
     if not candidates:
         return None, None, how
     years = [s["year"] for s in songs if s["year"]]
-    best = max(candidates, key=lambda c: match.rank(c, album, artist, len(songs), min(years) if years else None))
+    best = max(candidates, key=lambda c: match.rank(c, searched, artist, len(songs), min(years) if years else None))
     return best["id"], best, how
 
 

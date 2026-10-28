@@ -145,6 +145,22 @@ def _no_progress(done, total, message):
     pass
 
 
+def trash_leftovers(root, folder, stamp, entries):
+    """A folder left without songs (a playlist's, emptied by a remake): what's still in it (its cover and so on)
+    goes to the trash, journaled. Returns whether it did anything."""
+    full = os.path.join(root, folder)
+    if not folder or not os.path.isdir(full) or _has_audio(full):
+        return False
+    scan.hide_from_navidrome(os.path.join(root, TRASH_DIR))
+    for dirpath, _, names in os.walk(full):
+        for name in names:
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
+            _move(root, rel, os.path.join(TRASH_DIR, stamp, rel), entries, "extra")
+    for dirpath, _, _ in sorted(os.walk(full), reverse=True):
+        _remove_empty_dirs(root, os.path.relpath(dirpath, root))
+    return True
+
+
 def move_into_place(conn, root, paths, entries):
     """Move the songs at `paths` to their clean locations, as Clean up would, with their lyrics files; then
     an emptied folder's covers and logs follow. A song whose place is taken is left where it is: that name

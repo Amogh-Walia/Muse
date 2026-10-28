@@ -73,9 +73,10 @@ def get_recording(recording_id):
     return _get(f"recording/{recording_id}", {"inc": "releases release-groups artist-credits"})
 
 
-def search_recordings(title, artist=None, limit=10):
-    """Recordings by title (and artist); search results include the releases they're on."""
-    query = f'recording:"{_quote(title)}"' + (f' AND artist:"{_quote(artist)}"' if artist else "")
+def search_recordings(title, artist=None, release=None, limit=10):
+    """Recordings by title (and artist, and the release they're on); search results include their releases."""
+    query = f'recording:"{_quote(title)}"' + (f' AND artist:"{_quote(artist)}"' if artist else "") + \
+        (f' AND release:"{_quote(release)}"' if release else "")
     return (_get("recording/", {"query": query, "limit": limit}) or {}).get("recordings", [])
 
 

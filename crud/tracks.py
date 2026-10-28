@@ -106,6 +106,42 @@ def albums(conn):
     return [dict(r) for r in rows]
 
 
+RELEASE_TYPE_KEYS = ("releasetype", "musicbrainz_albumtype", "release type", "musicbrainz album type")
+
+
+def release_kinds(conn):
+    """{folder: "single" or "ep"} from the songs' release type tags (or "EP" ending the album name);
+    folders not listed are albums."""
+    kinds = {}
+    marks = ", ".join("?" * len(RELEASE_TYPE_KEYS))
+    for folder, value in conn.execute(f"""SELECT t.folder, lower(g.value) FROM tracks t JOIN tags g ON g.track_id = t.id
+                                          WHERE lower(g.key) IN ({marks})""", RELEASE_TYPE_KEYS):
+        parts = {p.strip() for p in value.replace("/", ";").split(";")}
+        if "single" in parts:
+            kinds[folder] = "single"
+        elif "ep" in parts and kinds.get(folder) != "single":
+            kinds[folder] = "ep"
+    for folder, album in conn.execute("SELECT folder, min(album) FROM tracks GROUP BY folder"):
+        if folder not in kinds and album and album.rstrip().lower().endswith(" ep"):
+            kinds[folder] = "ep"
+    return kinds
+
+
+def album_folders(conn, album_artist):
+    """The folders holding albums by `album_artist`."""
+    return [r[0] for r in conn.execute("SELECT DISTINCT folder FROM tracks WHERE lower(album_artist) = lower(?)", (album_artist,))]
+
+
+def appearances(conn, artist=None):
+    """Songs on albums by someone else: {artist: {folder: songs}} (main artist of the song vs album artist)."""
+    sql = """SELECT artist, folder, count(*) FROM tracks WHERE artist IS NOT NULL AND album_artist IS NOT NULL
+             AND lower(artist) <> lower(album_artist)""" + (" AND lower(artist) = lower(?)" if artist else "") + " GROUP BY artist, folder"
+    out = {}
+    for name, folder, songs in conn.execute(sql, (artist,) if artist else ()):
+        out.setdefault(name, {})[folder] = songs
+    return out
+
+
 def album_artists(conn):
     """Every album artist in the library as spelled in the tags, with its MusicBrainz artist id when the files
     have one: [(name, id or None)], most used first."""

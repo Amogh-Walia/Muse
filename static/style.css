@@ -43,6 +43,12 @@ main { padding: 20px; }
 .album { cursor: pointer; }
 .album .art { aspect-ratio: 1; background: var(--chip); border-radius: 6px; overflow: hidden; display: grid; place-items: center; color: var(--muted); font-size: 28px; }
 .album img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.artist-card .art { border-radius: 50%; }  /* artists round, albums square */
+.artist-head { display: flex; gap: 20px; align-items: center; margin: 4px 0 18px; }
+.artist-head h2 { margin: 0 0 8px; }
+.artist-photo { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; background: var(--chip); display: grid; place-items: center; color: var(--muted); font-size: 32px; flex: none; }
+.artist-photo img { width: 100%; height: 100%; object-fit: cover; }
+.artpic { border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px 12px; margin-bottom: 18px; background: var(--panel); }
 .album .t { font-weight: 600; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .album .s { color: var(--muted); font-size: 12px; }
 .album:hover .art { outline: 2px solid var(--accent); }
@@ -126,6 +132,7 @@ table.colors input[type=color] { width: 54px; height: 32px; border: 1px solid va
 .rm-group { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; margin: 10px 0; background: var(--panel); }
 .rm-group > summary { cursor: pointer; padding: 4px 0; }
 #artedit.open { display: grid; z-index: 6; }
+.note.lyrics-safe { background: color-mix(in srgb, var(--ok) 12%, transparent); border-left: 3px solid var(--ok); padding: 8px 12px; border-radius: 4px; }
 #detail #edit-track-art { margin: 8px 0 4px; }
 .ae-songs { display: grid; gap: 4px; max-height: 300px; overflow: auto; }
 .ae-song { display: flex; gap: 8px; align-items: center; font-size: 13px; }

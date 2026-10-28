@@ -139,6 +139,20 @@ def strip_years(text):
     return BRACKET_YEAR.sub("", text)
 
 
+# '(From "Om Shanti Om")', '(from the original motion picture "Penguins of Madagascar")', '[From Kalyug]': the album
+# (usually a film's soundtrack) a song comes from. The closing bracket is optional: some stores cut titles short.
+FROM_ALBUM = re.compile(r"""\s*[(\[]\s*from\s+(?:the\s+)?(?:original\s+)?(?:motion\s+picture|film|movie|series|show|album|soundtrack|game)?\s*
+                            ["'_\u201c\u2018]?(?P<album>[^"'_\u201d\u2019)\]]+?)["'_\u201d\u2019]?\s*(?:[)\]]|$)""", re.I | re.X)
+
+
+def from_album(title):
+    """(title without it, album name) for a title naming the album it's from, else (title, None)."""
+    m = FROM_ALBUM.search(normalize(title or ""))
+    if not m or not m.group("album").strip():
+        return title, None
+    return normalize(title[:m.start()] if m.start() else title), m.group("album").strip()
+
+
 def clean_title(title):
     """Returns (clean title, featured artists pulled out of it)."""
     title, featured = strip_feat(normalize(title))

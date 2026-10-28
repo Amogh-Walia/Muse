@@ -68,6 +68,8 @@ The `musicbrainz/` service looks each album up on musicbrainz.org.
 
 MusicBrainz allows about one request a second, so a lookup takes about 2 seconds per album. Set `MUSE_MB_CONTACT` in `.env` to a URL or e-mail to include contact details in the User-Agent, as MusicBrainz asks.
 
+**Songs that say where they're from.** Store titles often name a song's album: `Main Agar Kahoon (From "Om Shanti Om")`, `Celebrate (from the original motion picture "Penguins of Madagascar")`, or the album name of a single like `Dekhte Dekhte (From "Batti Gul Meter Chalu")`. When an album's name, or every one of its songs, says it's from somewhere, Scrape Details searches for that album first, so a film song is matched to the film's soundtrack. The rule (`rules.from_album`) accepts quotes or none, "the film/series/original motion picture", square brackets, and titles cut short before the closing bracket.
+
 ## Operations: album art
 
 The **Operations** tab lists albums with songs lacking embedded artwork. **Find artwork** gathers candidate covers into a cache (`MUSE_ART_CACHE`, named by content hash):
@@ -105,7 +107,7 @@ Each song's lyrics status is kept in the catalog: **synced** (timed lines), **pl
 
 - **Finding lyrics** (Operations → Lyrics): songs without lyrics, and optionally songs with only plain lyrics, are looked up on [LRCLIB](https://lrclib.net), a free community database. Muse first asks for an exact match on artist, title, album and length. Failing that, it searches and keeps only results whose title and artist match and whose length is within 2 seconds, so a live take or radio edit doesn't get the album version's lyrics. Misses are remembered and not asked again unless you tick "Ask again". Requests are kept to about one a second.
 - **Saving:** chosen lyrics are saved next to the song: synced ones as `<song>.lrc`, plain ones as `<song>.txt`. Navidrome, Subsonic apps and most players read both, and the audio file isn't touched. It's journaled, so Undo removes them, or restores a file that was replaced.
-- **Duplicates keep their lyrics:** when you resolve a name clash, a kept copy without lyrics, or with only plain ones, gets the discarded copy's better lyrics saved next to it. The comparison dialog says so beforehand. Copies side by side share one `.lrc` (it's named after the song without its extension), and it stays with the copy you keep.
+- **Duplicates keep their lyrics:** when you resolve a name clash, a kept copy without lyrics, or with only plain ones, gets the discarded copy's better lyrics saved next to it. The comparison dialog says so beforehand. Copies side by side share one `.lrc` (it's named after the song without its extension), and it stays with the copy you keep. The comparison says so up front: a note above the table names which copy has which lyrics, and the Lyrics row shows what each copy ends up with if it's the one kept ("None → if kept: synced, from the .flac copy").
 - **Orphaned lyrics files:** `.lrc` files with no song of the same name, usually left behind by renames, are listed. Each comes with a suggested fix: reattach it to the one song it fits that has no lyrics, or move it to `.muse-trash/`.
 - **In the player:** the ♪ button shows the playing song's lyrics. Synced lines scroll and highlight with the music, and clicking a line jumps there.
 
@@ -121,6 +123,29 @@ Suggestions come from three checks:
 
 The last check also catches real sequels and editions ("The Marshall Mathers LP 2"). **This is fine, ignore** stops a suggestion coming back. It applies to that exact set of albums, so a new album joining the group brings the suggestion back. Ignored suggestions are listed under the suggestions, each with **Suggest again**.
 
+## Artists
+
+The **Artists** tab lists every album artist with how many albums, EPs and singles they have, their songs, and how many albums by others they appear on. An artist's page groups their releases into **Albums**, **EPs** and **Singles** (newest first), plus **Appears on**: albums by someone else that include songs by them. Opening an album from there, *←* goes back to the artist.
+
+**Artist picture:** *✎ Artist picture* on an artist's page finds photos on Deezer (artist photos, no account needed) and the artist's image on Wikimedia Commons (through their MusicBrainz → Wikidata link), or takes one from your drive. The chosen one is saved as `artist.jpg` in the artist's folder (`Artist/`, above their albums), which is where Navidrome looks for artist images, and the Artists tab shows it. Replacing it sets the old one aside: Undo history puts it back. Artists with no albums of their own have no folder, so no picture.
+
+A release's kind comes from its songs' release type tag (`releasetype`, written by MusicBrainz and by *Make it a single*), or from an album name ending in "EP". Albums show a *Single* or *EP* label in the Albums grid too.
+
+## Singles
+
+A song released on its own is stored as a **single**. That's the same way MusicBrainz-tagged singles already are:
+- **its own release:** the album is named after the song, the song is track 1 of 1, and the album artist is its main artist;
+- **release type `single`**, which Navidrome and most players use to list singles apart from albums;
+- **no leftover MusicBrainz release ids** from wherever it came from;
+- **the release date** from the file (or the store's release-date tag);
+- **its own folder:** Clean up's usual layout gives each single `Artist/Year - Title/`. Navidrome groups by folder, so a shared "Singles" folder would make them one album there.
+
+How songs become singles:
+- **Song details → Make it a single** turns any song into one.
+- **In Remake Various Artists**, a song whose best match on MusicBrainz is a single gets that single's tags. Songs MusicBrainz doesn't have are made singles by default, and any song can be made one from its dropdown.
+
+Either way, a song taken out of a playlist-style album also loses the playlist's picture (Album art or Edit artwork gives it its own), and a playlist folder left empty goes to the trash. Merge albums never suggests merging a single into an album of a similar name. It's journaled: one Undo reverses it.
+
 ## Remake Various Artists
 
 Some "albums" are really playlists, such as Apple Music's *… Essentials* or *Radio Hits*. Each song carries the right title and artist, but the album is the playlist, so everything files under `Various Artists/`. Operations → **Remake Various Artists** sends each song back to its own album.
@@ -130,6 +155,7 @@ Some "albums" are really playlists, such as Apple Music's *… Essentials* or *R
   - Albums filed as Various Artists that aren't linked to MusicBrainz, which you can tick too.
 - **How songs are looked up:** each song is looked up on MusicBrainz by its **ISRC**, a code for the recording that most store-bought files carry. Without an ISRC, or when MusicBrainz doesn't know it, the lookup searches by title and artist and checks the length (within 8 seconds). That's two requests a song, at MusicBrainz's one a second. The lookup can be stopped and continued, and results are kept, so it isn't repeated.
 - **How the album is chosen:** every release the recording is on is an option, ranked:
+  0. the album the title says it's from: `Pyaar Tenu Karda Gabru (From "Shubh Mangal Zyada Saavdhan")` goes to that film's soundtrack (the search uses it too, when there's no ISRC match);
   1. one already in your library (same release group, or an album of the same name);
   2. not a compilation, live album or remix;
   3. official, and an album before an EP or single;

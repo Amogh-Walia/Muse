@@ -10,7 +10,7 @@
 <body>
 <header>
   <h1 title="My Unruly Songs, Edited">M<span>u</span>se</h1>
-  <nav><button data-view="albums" class="on">Albums</button><button data-view="tracks">Tracks</button><button data-view="ingest">Ingest<span class="count" id="ingest-count"></span></button><button data-view="operations">Operations</button><button data-view="transfer">Import / Export</button><button data-view="navidrome">Access Navidrome</button></nav>
+  <nav><button data-view="albums" class="on">Albums</button><button data-view="artists">Artists</button><button data-view="tracks">Tracks</button><button data-view="ingest">Ingest<span class="count" id="ingest-count"></span></button><button data-view="operations">Operations</button><button data-view="transfer">Import / Export</button><button data-view="navidrome">Access Navidrome</button></nav>
   <input type="search" id="q" placeholder="Search title, artist, album, genre, path…">
   <div id="stats"></div>
   <div id="job" role="status" hidden><button id="job-name" class="btn link" title="Go to it"></button><button class="btn pstop" type="button">Stop</button></div>
@@ -165,14 +165,15 @@ async function render() {
   if (state.view === "operations") return renderOperations();
   if (state.view === "navidrome") return renderAccess();
   if (state.view === "transfer") return renderTransfer();
+  if (state.view === "artists") return state.artist ? renderArtist() : renderArtists();
   if (state.view === "albums" && state.folder === null) return renderAlbums();
   return renderTracks();
 }
 
-function renderAlbums() {
-  const q = state.q.toLowerCase();
-  const list = state.albums.filter(a => !q || [a.folder, a.albums, a.artist, a.year].join(" ").toLowerCase().includes(q));
-  $("#main").innerHTML = list.length ? `<div class="grid">${list.map(a => `
+const KIND_LABEL = { single: "Single", ep: "EP" };
+
+// One album tile (Albums grid and artist pages). Clicking it opens the album.
+const albumCard = a => `
     <div class="album" data-folder="${esc(a.folder)}" title="${esc(a.folder)}">
       <div class="art"><img loading="lazy" src="${coverUrl(a.cover_id)}" onerror="this.replaceWith('♪')"></div>
       <div class="t">${a.folder === "" ? "Loose files (library root)" : esc(a.albums)}</div>
@@ -180,8 +181,82 @@ function renderAlbums() {
       <div class="s">${a.tracks} tracks · ${dur(a.duration)} · ${esc(quality(a))}</div>
       <div class="flags">${a.complete === 0 ? `<span class="badge warn">Incomplete · ${a.missing} missing</span>`
         : a.complete === 1 ? `<span class="badge ok">Complete</span>` : ""}${a.editions > 1
-        ? `<span class="badge warn" title="Its songs point at ${a.editions} different MusicBrainz editions">Mixed editions</span>` : ""}</div>
-    </div>`).join("")}</div>` : `<div class="empty">No albums match.</div>`;
+        ? `<span class="badge warn" title="Its songs point at ${a.editions} different MusicBrainz editions">Mixed editions</span>` : ""}${KIND_LABEL[a.kind]
+        ? `<span class="badge">${KIND_LABEL[a.kind]}</span>` : ""}</div>
+    </div>`;
+
+function renderAlbums() {
+  const q = state.q.toLowerCase();
+  const list = state.albums.filter(a => !q || [a.folder, a.albums, a.artist, a.year].join(" ").toLowerCase().includes(q));
+  $("#main").innerHTML = list.length ? `<div class="grid">${list.map(albumCard).join("")}</div>` : `<div class="empty">No albums match.</div>`;
+}
+
+// --- artists tab ---------------------------------------------------------------------
+
+async function renderArtists() {
+  if (!state.artists) {
+    $("#main").innerHTML = `<div class="empty">Loading…</div>`;
+    state.artists = await api("/api/artists");
+    if (state.view !== "artists" || state.artist) return;
+  }
+  const q = state.q.toLowerCase();
+  const list = state.artists.filter(a => !q || a.artist.toLowerCase().includes(q));
+  const counts = a => [a.album && plural(a.album, "album"), a.ep && plural(a.ep, "EP"), a.single && plural(a.single, "single")].filter(Boolean).join(" · ");
+  $("#main").innerHTML = list.length ? `<div class="grid">${list.map(a => `
+    <div class="album artist-card" data-artist="${esc(a.artist)}" title="${esc(a.artist)}">
+      <div class="art">${a.picture ? `<img loading="lazy" src="${artistImageUrl(a.artist)}" onerror="this.replaceWith('♪')">`
+        : a.cover_id ? `<img loading="lazy" src="${coverUrl(a.cover_id)}" onerror="this.replaceWith('♪')">` : "♪"}</div>
+      <div class="t">${esc(a.artist)}</div>
+      <div class="s">${counts(a)}</div>
+      <div class="s">${plural(a.songs, "song")}${a.appears_on ? ` · on ${plural(a.appears_on, "album")} by others` : ""}</div>
+    </div>`).join("")}</div>` : `<div class="empty">No artists match.</div>`;
+}
+
+const artistImageUrl = name => `/artist-image?${new URLSearchParams({ name, v: state.artVersion })}`;
+// The artist picture panel on an artist's page: candidates found, search online, pick from the drive, save.
+const ap = { open: false, data: null, sha: null, busy: false };
+
+function artistPictureHtml() {
+  const d = ap.data;
+  if (!ap.open) return "";
+  if (!d) return `<div class="artpic" id="artpic"><p class="muted">Loading…</p></div>`;
+  return `<div class="artpic" id="artpic">
+    <h3>Artist picture</h3>
+    <p class="muted">${d.folder ? `Saved as <code>${esc(d.folder)}/artist.jpg</code>, where Navidrome looks for it.${d.current ? ` Now: ${esc(d.current)}.` : " There's none yet."}`
+      : `${esc(d.artist)} has no albums of their own in the library, so there's no folder to keep a picture in.`}</p>
+    <div class="cands">${d.candidates.map(c => candCard(c, "ap-cand", ap.sha === c.sha)).join("")}
+      <label class="cand from-drive"><input type="file" accept="image/*" id="ap-file" hidden><div class="img">+ Choose image…</div><div class="meta">From your drive</div></label></div>
+    <div class="actions"><button class="btn" id="ap-search">Search online</button>
+      <span class="muted">Deezer's artist photos, and the artist's image on Wikimedia Commons (through MusicBrainz).</span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="ap-save" ${ap.sha && d.folder ? "" : "disabled"}>Use this picture</button></div>
+    <div class="progress" id="ap-progress" data-ops="artistart" hidden>
+      <div class="track" role="progressbar" aria-label="Artist picture progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+      <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+    </div>
+    <p class="muted" id="ap-msg" role="status"></p></div>`;
+}
+
+async function loadArtistPicture() {
+  try { ap.data = await post("/api/artists/picture", { name: state.artist }); } catch (err) { ap.data = null; }
+  if (ap.sha && !(ap.data?.candidates || []).some(c => c.sha === ap.sha)) ap.sha = null;
+  if ($("#artpic")) $("#artpic").outerHTML = artistPictureHtml();
+}
+
+async function renderArtist() {
+  const d = await api("/api/artists?" + new URLSearchParams({ name: state.artist }));
+  if (state.view !== "artists" || !state.artist) return;
+  if (ap.artist !== state.artist) Object.assign(ap, { artist: state.artist, open: false, data: null, sha: null });
+  const section = (title, list) => list.length ? `<h3>${title} (${list.length})</h3><div class="grid">${list.map(albumCard).join("")}</div>` : "";
+  const byYear = list => [...list].sort((x, y) => (y.year || 0) - (x.year || 0));
+  const of = kind => byYear(d.albums.filter(a => a.kind === kind));
+  $("#main").innerHTML = `<div class="crumb"><button id="back-artists">← All artists</button></div>
+    <div class="artist-head"><div class="artist-photo">${d.picture ? `<img src="${artistImageUrl(d.artist)}" alt="">` : "♪"}</div>
+      <div><h2>${esc(d.artist)}</h2>${d.folder ? `<button class="btn" id="ap-open">✎ Artist picture</button>` : ""}</div></div>
+    ${artistPictureHtml()}
+    ${section("Albums", of("album"))}${section("EPs", of("ep"))}${section("Singles", of("single"))}
+    ${section("Appears on", byYear(d.appears_on))}
+    ${d.albums.length || d.appears_on.length ? "" : `<div class="empty">Nothing by ${esc(d.artist)}.</div>`}`;
 }
 
 async function renderTracks() {
@@ -197,7 +272,7 @@ async function renderTracks() {
     : [...rows, ...missing.map(m => ({ ...m, missing: true }))].sort((a, b) => order(a) - order(b));
   state.rows = rows;
   const ndAlbum = rows.find(t => t.navidrome_album_id)?.navidrome_album_id;
-  const crumb = state.folder !== null ? `<div class="crumb"><button id="back">← All albums</button><strong>${state.folder === "" ? "Loose files" : esc(rows[0]?.album || state.folder)}</strong><code>${esc(state.folder)}/</code>
+  const crumb = state.folder !== null ? `<div class="crumb"><button id="back">← ${state.backTo ? esc(state.backTo.artist) : "All albums"}</button><strong>${state.folder === "" ? "Loose files" : esc(rows[0]?.album || state.folder)}</strong><code>${esc(state.folder)}/</code>
     ${rows.some(canPlay) ? `<button class="btn" id="play-album">▶ Play album</button>` : ""}
     ${state.folder ? `<button class="btn" id="edit-album-art">✎ Edit artwork</button>` : ""}
     ${ndAlbum && state.nd?.public_url ? `<a class="btn link" href="${esc(state.nd.public_url)}/app/#/album/${esc(ndAlbum)}/show" target="_blank" rel="noopener">Open in Navidrome ↗</a>` : ""}</div>` : "";
@@ -220,7 +295,9 @@ async function showTrack(id) {
   const props = [quality(t), t.channels && t.channels + " ch", t.bitrate && Math.round(t.bitrate / 1000) + " kbps", t.codec, dur(t.duration), bytes(t.size), t.has_cover ? "embedded art" : "no embedded art"];
   $("#detail").innerHTML = `<button class="close" aria-label="Close">×</button>
     <img src="${coverUrl(t.id)}" onerror="this.style.visibility='hidden'">
-    <button class="btn" id="edit-track-art" data-folder="${esc(t.folder)}" data-path="${esc(t.path)}">✎ Edit artwork</button>
+    <div class="actions"><button class="btn" id="edit-track-art" data-folder="${esc(t.folder)}" data-path="${esc(t.path)}">✎ Edit artwork</button>
+      <button class="btn" id="make-single" data-id="${t.id}" data-title="${esc(t.title || t.filename)}">Make it a single</button></div>
+    <p class="muted" id="single-msg" role="status"></p>
     <h2>${esc(t.title || t.filename)}</h2>
     <div class="sub">${esc(t.artist)} — ${esc(t.album)}${t.year ? " (" + t.year + ")" : ""}</div>
     <div class="chips">${props.filter(Boolean).map(p => `<span class="chip">${esc(p)}</span>`).join("")}</div>
@@ -241,11 +318,34 @@ document.addEventListener("click", e => {
   if (el.closest("#cleanup, #clash, #mb, #player, #appearance, #artedit")) return;
   if (state.view === "ingest" && el.closest("#main") && !el.closest("tr[data-id]")) return;
   if (state.view === "transfer" && el.closest("#main")) return;  // its own handlers below
-  if (el.closest("nav button")) { state.view = el.closest("nav button").dataset.view; state.folder = null; return render(); }
+  if (el.closest("nav button")) {
+    state.view = el.closest("nav button").dataset.view; state.folder = null; state.artist = null; state.backTo = null;
+    return render();
+  }
   if (el.closest("[data-sub]")) { e.preventDefault(); return goOps(el.closest("[data-sub]").dataset.sub); }
   if (el.closest("[data-goto]")) { state.view = el.closest("[data-goto]").dataset.goto; state.folder = null; return render(); }
-  if (el.closest(".album")) { state.folder = el.closest(".album").dataset.folder; state.sort = null; scrollTo(0, 0); return render(); }
-  if (el.id === "back") { state.folder = null; return render(); }
+  if (el.closest(".artist-card")) { state.artist = el.closest(".artist-card").dataset.artist; scrollTo(0, 0); return render(); }
+  if (el.id === "back-artists") { state.artist = null; return render(); }
+  if (el.id === "ap-open") {
+    ap.open = !ap.open;
+    $("#artpic")?.remove();
+    if (ap.open) { el.closest(".artist-head").insertAdjacentHTML("afterend", artistPictureHtml()); loadArtistPicture(); }
+    return;
+  }
+  if (el.id === "ap-search" && !ap.busy) return runJob("artistpic", "/api/artists/picture/find", { name: state.artist });
+  if (el.id === "ap-save" && !ap.busy && ap.sha) {
+    if (!confirm(`Use this picture for ${state.artist}? It's saved as artist.jpg in their folder; Undo history can put back the old one.`)) return;
+    return runJob("artistpic", "/api/artists/picture/set", { name: state.artist, sha: ap.sha });
+  }
+  if (el.closest(".album")) {
+    if (state.view === "artists") { state.backTo = { artist: state.artist }; state.view = "albums"; }
+    state.folder = el.closest(".album").dataset.folder; state.sort = null; scrollTo(0, 0); return render();
+  }
+  if (el.id === "back") {
+    state.folder = null;
+    if (state.backTo) { state.view = "artists"; state.artist = state.backTo.artist; state.backTo = null; }
+    return render();
+  }
   if (el.closest("th")) { const k = el.closest("th").dataset.sort;
     state.dir = state.sort === k && state.dir === "asc" ? "desc" : "asc"; state.sort = k; return render(); }
   if (el.closest(".play-btn")) { const id = +el.closest(".play-btn").dataset.id; const list = (state.rows || []).filter(canPlay);
@@ -253,6 +353,12 @@ document.addEventListener("click", e => {
   if (el.id === "play-album") return playQueue((state.rows || []).filter(canPlay), 0);
   if (el.id === "edit-album-art") return openArtEdit(state.folder);
   if (el.id === "edit-track-art") return openArtEdit(el.dataset.folder, el.dataset.path);
+  if (el.id === "make-single" && !PANES.single.state.busy) {
+    if (!confirm(`Make “${el.dataset.title}” a single? It becomes its own release by its main artist (track 1 of 1, release type single) in its own folder, ` +
+                 "Artist/Year - Title. Undo history can reverse it.")) return;
+    PANES.single.trackId = +el.dataset.id;
+    return runJob("single", "/api/singles", { track_ids: [+el.dataset.id] });
+  }
   if (el.closest("tbody tr[data-id]")) return showTrack(el.closest("tr").dataset.id);
   if (el.closest(".close")) return $("#detail").classList.remove("open");
   if (el.matches("dd.long")) el.classList.toggle("x");
@@ -270,6 +376,7 @@ let timer;
 $("#q").addEventListener("input", e => { clearTimeout(timer); timer = setTimeout(() => { state.q = e.target.value.trim(); render(); }, 150); });
 
 async function loadLibrary() {
+  state.artists = null;  // rebuilt from the fresh catalog when the Artists tab is shown
   const [s, albums] = await Promise.all([api("/api/stats"), api("/api/albums")]);
   state.albums = albums;
   $("#stats").textContent = `${s.tracks} tracks · ${s.folders} folders · ${s.artists} artists · ${dur(s.duration)} · ${bytes(s.size)}`;
@@ -1057,16 +1164,18 @@ function remakeRowHtml(r) {
   const t = r.target, on = t && r.chosen !== "keep" && !rm.off.has(r.id);
   const where = !r.status ? `<span class="muted">Not looked up yet.</span>`
     : r.status === "error" ? `<span class="badge bad">Lookup failed</span> <span class="muted">${esc(r.how)}</span>`
-    : !r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> <span class="muted">It stays where it is.</span>`
     : r.chosen === "keep" ? `<span class="muted">Left as it is.</span>`
-    : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new album in your library</span>`) +
+    : t.single ? (!r.options.length ? `<span class="badge warn">Not on MusicBrainz</span> ` : "") +
+      `<span class="muted">→ a single of its own: ${esc(r.artist || "")} – ${esc(t.album)}, in its own folder</span>`
+    : (t.joins ? `→ joins your album <code>${esc(t.joins)}</code> <span class="muted">(${esc(t.joins_how)})</span>` : `<span class="muted">→ a new ${t.type === "Single" ? "single" : t.type === "EP" ? "EP" : "album"} in your library</span>`) +
       (t.duplicate ? ` <span class="badge warn" title="${esc(t.duplicate)}">You already have this song</span> <span class="muted">Clean up shows the two copies to compare and keeps one.</span>` : "") +
       (t.clashes_with?.length ? ` <span class="badge warn">Same song as ${esc(t.clashes_with.join(", "))}</span> <span class="muted">Clean up compares them.</span>` : "");
   return `<div class="lyrics-row rm-row">
     <input type="checkbox" class="rm-song" data-id="${r.id}" ${on ? "checked" : ""} ${t && r.chosen !== "keep" ? "" : "disabled"} aria-label="Remake ${esc(r.title)}">
     <div><b>${esc(r.title)}</b> <span class="muted">· ${esc(r.artist || "")}${r.how && r.options.length ? ` · found by ${esc(r.how)}` : ""}</span>
-      ${r.options.length ? `<div><select class="rm-choice" data-id="${r.id}" aria-label="Album for ${esc(r.title)}">
+      ${r.status && r.status !== "error" ? `<div><select class="rm-choice" data-id="${r.id}" aria-label="Album for ${esc(r.title)}">
         ${r.options.map((o, i) => `<option value="${esc(o.release_id)}" ${r.chosen === o.release_id ? "selected" : ""}>${esc(o.label)}${i === 0 ? " (best match)" : ""}</option>`).join("")}
+        <option value="single" ${r.chosen === "single" ? "selected" : ""}>Make it a single of its own${r.options.length ? "" : " (MusicBrainz doesn't have it)"}</option>
         <option value="keep" ${r.chosen === "keep" ? "selected" : ""}>Leave this song as it is</option></select></div>` : ""}
       <div class="rm-where">${where}</div></div></div>`;
 }
@@ -1082,6 +1191,9 @@ function renderRemake() {
       Here each song is looked up on its own, by its ISRC (a code for the recording that most store-bought files carry) or else by title, artist and length,
       and goes back to the album it first came out on, such as the film soundtrack rather than a later compilation. When that album is already in your library,
       the song joins it. Songs you already have are flagged, and Clean up lets you compare the two copies. Nothing changes until you remake, and one Undo reverses it.</p>
+    <p class="muted"><b>Singles:</b> a song released on its own is filed as a single, its own one-song release by its main artist in its own folder, listed under
+      Singles on the artist's page. That's what happens when its best match on MusicBrainz is a single, and the default for songs MusicBrainz doesn't have.
+      Any song can be made a single from its dropdown.</p>
     <p class="muted"><b>Artwork:</b> remaking takes the songs' pictures out, since they're the playlist's cover rather than their album's. Their new albums then show up in
       <a href="#" data-sub="art">Album art</a> as albums without art, ready to get their real covers (from the Cover Art Archive, or from songs of that album you already have).
       Undo puts the old pictures back.</p>
@@ -1475,6 +1587,21 @@ $("#artedit").addEventListener("click", async e => {
     runJob("artedit", "/api/art/set", { folder: ae.data.folder, sha: ae.sha, paths: ae.whole ? null : [...ae.picked] });
   }
 });
+document.addEventListener("change", async e => {
+  const el = e.target;
+  if (state.view !== "artists" || ap.busy || !ap.data) return;
+  if (el.name === "ap-cand") { ap.sha = el.value; $("#ap-save").disabled = !ap.data.folder; }
+  if (el.id === "ap-file" && el.files[0]) {
+    $("#ap-msg").textContent = `Adding ${el.files[0].name}…`;
+    try {
+      const r = await uploadImage("\u0001artist\u0000" + state.artist, el.files[0]);
+      ap.sha = r.sha;
+      await loadArtistPicture();
+      $("#ap-msg").textContent = `Added ${el.files[0].name} (${r.width}×${r.height}).`;
+    } catch (err) { $("#ap-msg").textContent = err.message; }
+  }
+});
+
 $("#artedit").addEventListener("change", async e => {
   const el = e.target;
   if (ae.busy || !ae.data) return;
@@ -1680,12 +1807,38 @@ const CMP_ROWS = [
   ["Duration", m => dur(m.duration)],
   ["File size", m => m.size ? bytes(m.size) : "—"],
   ["Cover art", m => m.has_cover ? "Embedded" : "None", m => +m.has_cover],
-  ["Lyrics", m => m.lyrics ? `${m.lyrics === "synced" ? "Synced" : "Plain"} (${m.lyrics_source === "embedded" ? "in tags" : "." + m.lyrics_source})` : "None",
-    m => ({ synced: 2, plain: 1 })[m.lyrics] || 0],
+  ["Lyrics", (m, g) => {
+      const now = lyricsLabel(m), gets = lyricsIfKept(g, m);
+      return gets ? `${now} → if kept: ${gets.kind}, from the .${gets.from.ext} copy` : now;
+    }, m => ({ synced: 2, plain: 1 })[m.lyrics] || 0],
   ["MusicBrainz IDs", m => m.musicbrainz ? "Yes" : "No", m => +m.musicbrainz],
   ["Tag count", m => m.tag_count ?? "—", m => m.tag_count || 0],
   ["Title", m => m.title || "—"], ["Artist", m => m.artist || "—"], ["Album", m => m.album || "—"], ["Year", m => m.year ?? "—"],
 ];
+
+const lyricsLabel = m => m.lyrics ? `${m.lyrics === "synced" ? "Synced" : "Plain"} (${m.lyrics_source === "embedded" ? "in tags" : "." + m.lyrics_source})` : "None";
+
+// The lyrics copy `m` would get from another copy if it's the one kept (Clean up saves them next to it):
+// synced ones when it has none or only plain, plain ones when it has none. Null when it keeps its own.
+function lyricsIfKept(g, m) {
+  if (m.error || m.lyrics === "synced") return null;
+  const others = g.members.filter(o => o !== m && !o.error);
+  const synced = others.find(o => o.lyrics === "synced");
+  if (synced) return { kind: "synced", from: synced };
+  const plain = !m.lyrics && others.find(o => o.lyrics);
+  return plain ? { kind: "plain", from: plain } : null;
+}
+
+// When the copies' lyrics differ: say who has what, and that the kept copy ends up with the best of them.
+function clashLyricsNote(g) {
+  const members = g.members.filter(m => !m.error), kinds = new Set(members.map(m => m.lyrics || "none"));
+  if (kinds.size < 2) return "";
+  const best = members.some(m => m.lyrics === "synced") ? "synced" : "plain";
+  const who = members.map(m => `the .${esc(m.ext)} copy${members.filter(o => o.ext === m.ext).length > 1 ? ` (${esc(m.path.split("/").pop())})` : ""} has ` +
+    (m.lyrics ? `${m.lyrics} lyrics` : "none")).join(", ");
+  return `<p class="note lyrics-safe"><b>Lyrics are kept either way.</b> ${who[0].toUpperCase() + who.slice(1)}.
+    Whichever copy you keep ends up with the ${best} lyrics: if it doesn't have them, they're saved next to it as a lyrics file.</p>`;
+}
 
 function openClash(index) {
   const groups = cu.plan.clash_groups || [];
@@ -1706,18 +1859,15 @@ function openClash(index) {
     const top = Math.max(...scores), differs = scores.some(s => s !== scores[0]);
     return `<tr><td>${label}</td>${g.members.map((m, k) => m.error  // unreadable file: show where it is and why
       ? `<td class="${chosen(m)}">${label === "Current file" ? esc(m.path) : label === "Status" ? esc(m.error) : "—"}</td>`
-      : `<td class="${[cls, chosen(m), differs && scores[k] === top ? "best" : ""].join(" ")}">${esc(show(m))}</td>`).join("")}</tr>`;
+      : `<td class="${[cls, chosen(m), differs && scores[k] === top ? "best" : ""].join(" ")}">${esc(show(m, g))}</td>`).join("")}</tr>`;
   }).join("");
   const durations = g.members.map(m => m.duration).filter(Boolean);
   const versionsDiffer = durations.length > 1 && Math.max(...durations) - Math.min(...durations) > 2;
-  $("#clash-body").innerHTML = `
+  $("#clash-body").innerHTML = `${clashLyricsNote(g)}
     <div class="compare"><table class="cmp">
       <thead><tr><th></th>${g.members.map(m => `<th class="${chosen(m)}">
         <label class="pick"><input type="radio" name="clash-keep" value="${esc(m.path)}" ${keep === m.path ? "checked" : ""}> Keep this one</label>
         ${m.path === g.recommended ? `<span class="badge ok">Recommended: best quality</span>` : ""}
-        ${(m.lyrics !== "synced" && g.members.some(o => o !== m && o.lyrics === "synced")) || (!m.lyrics && g.members.some(o => o.lyrics))
-          ? `<div class="muted" style="font-weight:400;margin-top:4px">If kept, it gets the ${g.members.some(o => o !== m && o.lyrics === "synced") ? "synced" : "plain"}
-          lyrics from the other copy, saved next to it.</div>` : ""}
         ${g.align_to && m.mb_album_id !== g.align_to.id ? `<div class="muted" style="font-weight:400;margin-top:4px">If kept, it's re-tagged to match
           ${esc(g.align_to.title)}${g.align_to.date ? ` (${esc(g.align_to.date)})` : ""}, the edition the rest of the album is on.</div>` : ""}</th>`).join("")}</tr></thead>
       <tbody>${rows}</tbody>
@@ -1918,7 +2068,7 @@ $("#mb").addEventListener("click", async e => {
 const UNITS = { apply: "songs", undo: "steps", scan: "files" };
 const JOB_NAMES = { apply: "cleanup", undo: "undo", scan: "scan", musicbrainz: "Scrape Details run", artwork: "artwork run",
                     lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge", import: "import", export: "export",
-                    remake: "remake" };
+                    remake: "remake", single: "single", artistart: "artist picture search" };
 // Where each job is started from: the header indicator takes you there.
 const JOB_HOME = { apply: "cleanup", undo: "history", musicbrainz: "scrape", artwork: "art", lyrics: "lyrics", merge: "merge",
                    housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer", remake: "remake" };
@@ -1950,6 +2100,13 @@ const JOB_TEXT = {
     label: b => b.online ? "Searching… (online lookups take a couple of seconds per album)" : "Looking for covers already in your album folders and songs…",
     done: r => `Looked at ${r.albums} albums: ${r.with_candidates} have candidates.` +
       (r.errors.length ? ` ${r.errors.length} online lookups failed (${r.errors[0]}).` : "") },
+  "/api/artists/picture/find": { op: "artistart", label: "Looking on Deezer and Wikimedia Commons…",
+    done: r => (r.found ? `Found ${plural(r.found, "picture")}. Pick one and “Use this picture”.` : "Nothing found online. You can still choose an image from your drive.") +
+      (r.errors.length ? ` (${r.errors.join("; ")})` : "") },
+  "/api/artists/picture/set": { op: "artistart", label: "Saving the picture…",
+    done: r => `Saved as ${r.file}. Navidrome shows it after its next scan of that folder.` },
+  "/api/singles": { op: "single", label: "Making it a single…",
+    done: r => `Done: it's a single now${r.stats.moved ? ", in its own folder" : ""}` + (r.stats.art_removed ? ". The playlist's picture was taken out: give it a cover with Edit artwork" : "") + "." },
   "/api/art/set": { op: "artwork", label: "Putting the cover on…",
     done: r => (r.whole_album ? `The whole album has the new cover: ${plural(r.stats.songs || 0, "song")}` : `${plural(r.stats.songs || 0, "song")} have the new cover`) +
       (r.stats.cover_files ? " and the folder's cover file" : "") + (r.stats.unsupported ? ` (${r.stats.unsupported} in formats that can't hold artwork)` : "") + "." },
@@ -1975,7 +2132,7 @@ const JOB_TEXT = {
       (r.error ? `, ${r.error} failed (try again later)` : "") + ". Check where they'd go below."
       : "Every song of these albums has been looked up. Tick “Look up again” to refresh." },
   "/api/remake/apply": { op: "remake", label: "Remaking…",
-    done: r => `Remade ${plural(r.stats.remade || 0, "song")}` + (r.stats.joined ? ` (${r.stats.joined} joined albums you have)` : "") +
+    done: r => `Remade ${plural(r.stats.remade || 0, "song")}` + (r.stats.singles ? `, ${plural(r.stats.singles, "song")} made singles` : "") + (r.stats.joined ? ` (${r.stats.joined} joined albums you have)` : "") +
       `, ${r.stats.moved || 0} moved into place` + (r.stats.art_removed ? `, artwork taken out of ${r.stats.art_removed}: get their real covers in Album art` : "") + (r.clashes ? `. ${r.clashes} may be songs you already have: Clean up shows them to compare` : "") +
       (r.stats.folders_emptied ? `. ${plural(r.stats.folders_emptied, "emptied playlist folder")} went to the trash` : "") + "." },
   "/api/merge/apply": { op: "merge", label: "Merging…",
@@ -1994,6 +2151,16 @@ const PANES = {
          reload: async () => { await loadLibrary(); await loadArt(); }, after: () => updateArtCount() },
   lyrics: { ops: ["lyrics"], state: lyr, buttons: "#lyrics-op button", msg: "#lyr-msg",
             reload: async () => { await loadLyricsOp(); await loadLibrary(); } },
+  artistpic: { ops: ["artistart"], state: ap, buttons: "#artpic button, #artpic input", msg: "#ap-msg",
+               reload: async () => {
+                 state.artVersion = Date.now();
+                 const photo = $(".artist-photo");
+                 const d = await api("/api/artists?" + new URLSearchParams({ name: state.artist }));
+                 if (photo) photo.innerHTML = d.picture ? `<img src="${artistImageUrl(d.artist)}" alt="">` : "♪";
+                 await loadArtistPicture();
+               } },
+  single: { ops: ["single"], state: { busy: false }, buttons: "#detail button", msg: "#single-msg",
+            reload: async () => { await loadLibrary(); if (PANES.single.trackId) await showTrack(PANES.single.trackId); } },
   artedit: { ops: ["artwork"], state: ae, buttons: "#artedit button, #artedit input", msg: "#ae-msg",
              reload: async () => { state.artVersion = Date.now(); await refreshArtEdit(); await loadLibrary(); } },
   remake: { ops: ["remake"], state: rm, buttons: "#ops-pane button, #ops-pane select", msg: "#rm-msg",

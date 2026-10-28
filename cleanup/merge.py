@@ -60,14 +60,17 @@ def suggestions(conn):
         if len(keys) > 1:
             found.append({"keys": keys, "reason": "songs point at different editions, or a stray song belongs to it"})
     info = albums(conn)
+    singles = {f for f, kind in crud.tracks.release_kinds(conn).items() if kind == "single"}
+    # a single named like an album ("Rang" / "Rang De Basanti") is a single on purpose, not part of it
+    named = [a for a in info if a["folder"] not in singles]
     by_name = collections.defaultdict(list)
-    for a in info:
+    for a in named:
         by_name[_base(a["album"])].append(a)
     for name, same in by_name.items():
         if len(same) > 1:
             found.append({"keys": [a["key"] for a in same], "reason": "same album name in different folders"})
     by_artist = collections.defaultdict(list)
-    for a in info:
+    for a in named:
         by_artist[(a["artist"] or "").lower()].append(a)
     for same in by_artist.values():
         for a in same:

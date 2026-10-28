@@ -7,6 +7,7 @@ Settings come from .env (see .env.example). The catalog database is created, wit
 MUSE_LIBRARY, if it doesn't exist yet.
 """
 import argparse
+import collections
 import json
 import mimetypes
 import os
@@ -146,6 +147,8 @@ class Handler(BaseHTTPRequestHandler):
                 if route:
                     with self.db() as conn:
                         return self.send(200, route(conn, q, *parts[2:]))
+            if parts[0] == "artist-image":  # ?name=: the picture in an artist's folder
+                return self.artist_image(q.get("name") or "")
             if parts[0] == "cover" and len(parts) == 2:
                 return self.cover(int(parts[1]), embedded_only=q.get("embedded") == "1")
             if parts[0] == "stream" and len(parts) == 2:
@@ -182,6 +185,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, self.merge_ignore(body))
             if self.path == "/api/appearance":  # only .env colour lines
                 return self.send(200, self.save_appearance(body))
+            if self.path == "/api/artists/picture":  # an artist's picture and the candidates found so far (no network)
+                from artwork import artists
+                conn = crud.connect(self.db_path)
+                try:
+                    return self.send(200, artists.state(conn, crud.get_root(conn), body.get("name") or ""))
+                finally:
+                    conn.close()
             if self.path == "/api/art/folder":  # an album folder's artwork for Edit artwork (local images only)
                 from artwork import service as art_service
                 conn = crud.connect(self.db_path)
@@ -213,7 +223,8 @@ class Handler(BaseHTTPRequestHandler):
                      "/api/housekeeping/prune": self.prune, "/api/navidrome/sync": self.navidrome_sync,
                      "/api/lyrics/find": self.lyrics_find, "/api/lyrics/apply": self.lyrics_apply,
                      "/api/lyrics/orphans": self.lyrics_orphans, "/api/merge/apply": self.merge_apply,
-                     "/api/art/set": self.art_set, "/api/remake/lookup": self.remake_lookup, "/api/remake/apply": self.remake_apply,
+                     "/api/art/set": self.art_set, "/api/artists/picture/find": self.artist_picture_find,
+                     "/api/artists/picture/set": self.artist_picture_set, "/api/singles": self.make_singles, "/api/remake/lookup": self.remake_lookup, "/api/remake/apply": self.remake_apply,
                      "/api/transfer/import": self.transfer_import, "/api/transfer/export": self.transfer_export,
                      }.get(self.path)
             if route is None:
@@ -269,7 +280,40 @@ class Handler(BaseHTTPRequestHandler):
         return {**crud.tracks.stats(conn), "root": crud.get_root(conn)}
 
     def api_albums(self, conn, q):
-        return crud.tracks.albums(conn)
+        kinds = crud.tracks.release_kinds(conn)
+        return [{**a, "kind": kinds.get(a["folder"], "album")} for a in crud.tracks.albums(conn)]
+
+    def api_artists(self, conn, q):
+        """Album artists with their albums, EPs and singles; with ?name=, one artist's page (incl. appearances)."""
+        albums = self.api_albums(conn, q)
+        if q.get("name"):
+            name = q["name"].lower()
+            own = [a for a in albums if (a["artist"] or "").lower() == name and a["folder"]]
+            guest = crud.tracks.appearances(conn, q["name"])
+            folders = {f: n for found in guest.values() for f, n in found.items()}
+            from artwork import artists
+            artist_folder = artists.folder(conn, q["name"])
+            return {"artist": own[0]["artist"] if own else q["name"], "albums": own, "folder": artist_folder,
+                    "picture": artists.picture_file(crud.get_root(conn), artist_folder),
+                    "appears_on": [{**a, "songs_by": folders[a["folder"]]} for a in albums if a["folder"] in folders]}
+        guest = {k.lower(): len(v) for k, v in crud.tracks.appearances(conn).items()}
+        out = {}
+        for a in albums:
+            if not a["folder"] or not a["artist"]:
+                continue
+            entry = out.setdefault(a["artist"].lower(), {"artist": a["artist"], "album": 0, "ep": 0, "single": 0, "songs": 0,
+                                                        "cover_id": a["cover_id"], "appears_on": 0, "tops": collections.Counter()})
+            if "/" in a["folder"]:
+                entry["tops"][a["folder"].split("/")[0]] += 1
+            entry[a["kind"]] += 1
+            entry["songs"] += a["tracks"]
+        from artwork import artists
+        root = crud.get_root(conn)
+        for key, entry in out.items():
+            entry["appears_on"] = guest.get(key, 0)
+            tops = entry.pop("tops")
+            entry["picture"] = bool(tops and artists.picture_file(root, tops.most_common(1)[0][0]))
+        return sorted(out.values(), key=lambda e: e["artist"].lower())
 
     def api_tracks(self, conn, q):
         return crud.tracks.search(conn, q=q.get("q"), folder=q.get("folder"), sort=q.get("sort"), direction=q.get("dir"))
@@ -656,6 +700,22 @@ class Handler(BaseHTTPRequestHandler):
         return service.apply(self.db_path, body.get("choices") or {}, replace=bool(body.get("replace")),
                              save_folder=bool(body.get("save_folder", True)), progress=report_progress("artwork"))
 
+    def make_singles(self, body):
+        from cleanup import singles
+        progress = report_progress("single")
+        result = singles.apply(self.db_path, [int(t) for t in body.get("track_ids") or []], progress=progress)
+        self.refresh_status(progress)
+        return result
+
+    def artist_picture_find(self, body):
+        from artwork import artists
+        return artists.find(self.db_path, body.get("name") or "", progress=report_progress("artistart"))
+
+    def artist_picture_set(self, body):
+        from artwork import artists
+        report_progress("artistart")(0, 1, "Saving the picture…")
+        return artists.set_picture(self.db_path, body.get("name") or "", body.get("sha"))
+
     def art_set(self, body):
         """Edit artwork: one image onto a whole album (songs and cover file), or onto chosen songs."""
         from artwork import service
@@ -671,6 +731,17 @@ class Handler(BaseHTTPRequestHandler):
         return result
 
     # --- cover art -----------------------------------------------------------
+
+    def artist_image(self, name):
+        from artwork import artists, images
+        with self.db() as conn:
+            root, artist_folder = crud.get_root(conn), artists.folder(conn, name)
+        current = artists.picture_file(root, artist_folder)
+        if not current:
+            return self.send(404, {"error": "no artist picture"})
+        with open(os.path.join(root, artist_folder, current), "rb") as f:
+            data = f.read()
+        return self.send(200, data, images.probe(data)[0])
 
     def cover(self, track_id, embedded_only=False):
         """A song's cover: the folder's cover file if there is one, else the picture in the song (with
