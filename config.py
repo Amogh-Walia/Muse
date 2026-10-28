@@ -40,6 +40,9 @@ _load_dotenv(os.path.join(HERE, ".env"))
 LIBRARY = _path("MUSE_LIBRARY", None)
 # The SQLite catalog. Created (with a first scan) if it doesn't exist.
 DB_PATH = _path("MUSE_DB", "data/muse.db")
+# Where new downloads should land (point your downloader at it), as a folder inside the library. It holds a
+# .ndignore, so Navidrome doesn't see songs until Clean up moves them to their place. Empty: no inbox.
+INBOX = os.environ.get("MUSE_INBOX", "Inbox").strip().strip("/")
 # Undo journals for the cleanup, MusicBrainz and artwork operations.
 JOURNAL_DIR = _path("MUSE_JOURNAL_DIR", "data/journal")
 # Downloaded and uploaded cover images, named by content hash.

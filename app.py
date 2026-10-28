@@ -78,23 +78,25 @@ class Stopped(Exception):
     "requested" (the Stop button) or "unwatched" (no page has checked on it for a while)."""
 
 
-def report_progress(op, stoppable=False):
+def report_progress(op, stoppable=False, unwatched=True):
+    """A progress callback for job `op`. Stoppable jobs stop at the next call once Stop is pressed, and also
+    (with `unwatched`) once no page has been watching for config.STOP_UNWATCHED seconds."""
     def update(done, total, message):
         if stoppable:
             if STOP.is_set():
                 raise Stopped(done, total, "requested")
-            if config.STOP_UNWATCHED and time.monotonic() - WATCHED["at"] > config.STOP_UNWATCHED:
+            if unwatched and config.STOP_UNWATCHED and time.monotonic() - WATCHED["at"] > config.STOP_UNWATCHED:
                 raise Stopped(done, total, "unwatched")
         PROGRESS.update(running=True, op=op, done=done, total=total, message=message, stoppable=stoppable)
     return update
 
 
-def run_stoppable(op, unit, message, path, body, lookup):
+def run_stoppable(op, unit, message, path, body, lookup, unwatched=True):
     """Run a lookup that can stop between items. Lookups save each item's result as they go, so a stop keeps
     everything found so far. The result then says how far it got, and carries the request that continues
     with the rest: the same one, with the finished items (album keys or song ids) added to `skip`."""
     finished = []
-    progress = report_progress(op, stoppable=True)
+    progress = report_progress(op, stoppable=True, unwatched=unwatched)
     try:
         progress(0, 0, message)
         return lookup(progress, finished)
@@ -178,6 +180,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, self.merge_ignore(body))
             if self.path == "/api/appearance":  # only .env colour lines
                 return self.send(200, self.save_appearance(body))
+            if self.path == "/api/transfer/preview":  # only reads
+                with self.db() as conn:
+                    from transfer import service as transfer
+                    return self.send(200, transfer.import_preview(crud.get_root(conn), body.get("source")))
             if self.path == "/api/jobs/stop":  # asks the running lookup to stop after its current item
                 stoppable = bool(PROGRESS.get("running") and PROGRESS.get("stoppable"))
                 if stoppable:
@@ -189,6 +195,7 @@ class Handler(BaseHTTPRequestHandler):
                      "/api/housekeeping/prune": self.prune, "/api/navidrome/sync": self.navidrome_sync,
                      "/api/lyrics/find": self.lyrics_find, "/api/lyrics/apply": self.lyrics_apply,
                      "/api/lyrics/orphans": self.lyrics_orphans, "/api/merge/apply": self.merge_apply,
+                     "/api/transfer/import": self.transfer_import, "/api/transfer/export": self.transfer_export,
                      }.get(self.path)
             if route is None:
                 return self.send(404, {"error": "not found"})
@@ -364,6 +371,34 @@ class Handler(BaseHTTPRequestHandler):
         self.refresh_status(progress)
         return result
 
+    # --- import & export ----------------------------------------------------------
+
+    def api_transfer(self, conn, q, what=None):
+        """/api/transfer/browse?path=: folders on this machine, for picking an import source or export destination."""
+        from transfer import service as transfer
+        if what == "browse":
+            return transfer.browse(crud.get_root(conn), q.get("path"))
+        return {"inbox": config.INBOX or None, "places": transfer.places(crud.get_root(conn))}
+
+    def transfer_import(self, body):
+        """Move or copy a folder into the inbox (stoppable: what's moved stays moved), then catalogue it."""
+        from transfer import service as transfer
+        move = bool(body.get("move", True))
+        result = run_stoppable("import", "files", "Reading the folder…", self.path, body, lambda progress, finished:
+                               transfer.import_folder(self.db_path, body.get("source"), move=move, skip=set(body.get("skip") or []),
+                                                      finished=finished, progress=progress), unwatched=False)
+        progress = report_progress("import")
+        scan.scan(self.root(), self.db_path, progress=progress)
+        self.refresh_status(progress)
+        return result
+
+    def transfer_export(self, body):
+        """Copy album folders out of the library (stoppable; running it again carries on)."""
+        from transfer import service as transfer
+        return run_stoppable("export", "files", "Working out what to copy…", self.path, body, lambda progress, finished:
+                             transfer.export(self.db_path, body.get("folders") or [], body.get("dest"), safe=bool(body.get("safe", True)),
+                                             skip=set(body.get("skip") or []), finished=finished, progress=progress), unwatched=False)
+
     # --- lyrics -----------------------------------------------------------------
 
     def api_lyrics(self, conn, q, track_id=None):
@@ -398,9 +433,11 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- Navidrome & playback -------------------------------------------------
 
-    def api_navidrome(self, conn, q):
+    def api_navidrome(self, conn, q, what=None):
         from navidrome import service
-        return {**service.status(), **crud.tracks.navidrome_counts(conn), "linked_at": crud.get_meta(conn, "navidrome_linked"),
+        if what == "access":  # /api/navidrome/access: addresses for phones and for the admin pages
+            return service.access()
+        return {**service.status(), **crud.tracks.navidrome_counts(conn, config.INBOX), "linked_at": crud.get_meta(conn, "navidrome_linked"),
                 "syncing": NAVIDROME_FOLLOWUP["lock"].locked(), "last_sync": NAVIDROME_FOLLOWUP["last"]}
 
     def navidrome_sync(self, body):
@@ -514,6 +551,7 @@ class Handler(BaseHTTPRequestHandler):
             "changed": diff["stale"],
             "gone": diff["missing"],
             "downloading": scan.partial_downloads(root),
+            "inbox": {"folder": config.INBOX, "songs": scan.inbox_songs(root)} if config.INBOX else None,
             "unprocessed": [{k: t[k] for k in ("id", "path", "clean_path", "title", "artist", "album")}
                             for t in crud.tracks.unprocessed(conn)],
             "mixed": crud.releases.mixed_albums(conn),
@@ -521,6 +559,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def run_scan(self, body):
         progress = report_progress("scan")
+        scan.ensure_inbox(self.root())
         result = scan.scan(self.root(), self.db_path, full=bool(body.get("full")), progress=progress)
         try:
             self.refresh_status(progress)
@@ -627,9 +666,9 @@ def main():
         print(f"Filled in MusicBrainz ids for {filled} songs from their stored tags", flush=True)
     crud.set_root(conn, root)  # MUSE_LIBRARY wins, so a moved library only needs .env updated
     conn.commit()
-    trash = os.path.join(root, scan.TRASH_DIR)
-    if os.path.isdir(trash) and not os.path.exists(os.path.join(trash, ".ndignore")):
-        open(os.path.join(trash, ".ndignore"), "w").close()  # keep discarded duplicates out of Navidrome
+    if os.path.isdir(os.path.join(root, scan.TRASH_DIR)):
+        scan.hide_from_navidrome(os.path.join(root, scan.TRASH_DIR))  # discarded duplicates stay out of Navidrome
+    scan.ensure_inbox(root)  # new downloads stay out of Navidrome until Clean up moves them into place
     if crud.tracks.needs_status(conn):
         try:
             from cleanup import status
@@ -649,6 +688,8 @@ def main():
         mb_service.propose_alignments(conn, crud.get_root(conn))
     except ImportError:
         pass
+    except Exception as e:  # noqa: BLE001 - a convenience: never a reason not to start
+        print(f"Couldn't prepare edition fixes ({type(e).__name__}: {e}); they're retried after the next job.", flush=True)
     try:  # undo history past MUSE_UNDO_DAYS, and anything nothing can use any more
         from cleanup import retention
         removed = retention.prune(conn, crud.get_root(conn))

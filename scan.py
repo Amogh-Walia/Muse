@@ -132,6 +132,32 @@ def resolve_root(db_path, explicit=None):
     return root
 
 
+def hide_from_navidrome(folder):
+    """Create `folder` with an empty .ndignore in it: Navidrome (and anything honouring it) skips the folder."""
+    os.makedirs(folder, exist_ok=True)
+    marker = os.path.join(folder, ".ndignore")
+    if not os.path.exists(marker):
+        open(marker, "w").close()
+
+
+def ensure_inbox(root):
+    """Make sure the inbox (config.INBOX) exists and is hidden from Navidrome. Returns its path, or None."""
+    if not config.INBOX:
+        return None
+    inbox = os.path.join(root, config.INBOX)
+    hide_from_navidrome(inbox)
+    return inbox
+
+
+def inbox_songs(root):
+    """Audio files waiting in the inbox (finished downloads only)."""
+    inbox = config.INBOX and os.path.join(root, config.INBOX)
+    if not inbox or not os.path.isdir(inbox):
+        return []
+    return [os.path.relpath(os.path.join(d, n), root) for d, _, names in os.walk(inbox) for n in sorted(names)
+            if os.path.splitext(n)[1].lower() in AUDIO_EXTS]
+
+
 def partial_downloads(root):
     """Files still being downloaded (.part), which aren't ingested until they finish."""
     out = []

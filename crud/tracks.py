@@ -160,8 +160,13 @@ def set_navidrome_ids(conn, links):
                      [(song, album, tid) for tid, (song, album) in links.items()])
 
 
-def navidrome_counts(conn):
-    return dict(conn.execute("SELECT count(*) songs, count(navidrome_id) linked FROM tracks").fetchone())
+def navidrome_counts(conn, hidden=None):
+    """Songs and how many are linked to Navidrome, leaving out the folder `hidden` from it (the inbox)."""
+    if not hidden:
+        return dict(conn.execute("SELECT count(*) songs, count(navidrome_id) linked FROM tracks").fetchone())
+    prefix = hidden.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
+    return dict(conn.execute("SELECT count(*) songs, count(navidrome_id) linked FROM tracks WHERE path NOT LIKE ? ESCAPE '\\'",
+                             (prefix,)).fetchone())
 
 
 def unprocessed(conn):

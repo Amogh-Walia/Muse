@@ -10,7 +10,7 @@
 <body>
 <header>
   <h1 title="My Unruly Songs, Edited">M<span>u</span>se</h1>
-  <nav><button data-view="albums" class="on">Albums</button><button data-view="tracks">Tracks</button><button data-view="ingest">Ingest<span class="count" id="ingest-count"></span></button><button data-view="operations">Operations</button></nav>
+  <nav><button data-view="albums" class="on">Albums</button><button data-view="tracks">Tracks</button><button data-view="ingest">Ingest<span class="count" id="ingest-count"></span></button><button data-view="operations">Operations</button><button data-view="transfer">Import / Export</button><button data-view="navidrome">Access Navidrome</button></nav>
   <input type="search" id="q" placeholder="Search title, artist, album, genre, path…">
   <div id="stats"></div>
   <div id="job" role="status" hidden><button id="job-name" class="btn link" title="Go to it"></button><button class="btn pstop" type="button">Stop</button></div>
@@ -143,6 +143,8 @@ async function render() {
   dockPanels();
   if (state.view === "ingest") return renderIngest();
   if (state.view === "operations") return renderOperations();
+  if (state.view === "navidrome") return renderAccess();
+  if (state.view === "transfer") return renderTransfer();
   if (state.view === "albums" && state.folder === null) return renderAlbums();
   return renderTracks();
 }
@@ -216,6 +218,7 @@ document.addEventListener("click", e => {
   const el = e.target;
   if (el.closest("#cleanup, #clash, #mb, #player, #appearance")) return;
   if (state.view === "ingest" && el.closest("#main") && !el.closest("tr[data-id]")) return;
+  if (state.view === "transfer" && el.closest("#main")) return;  // its own handlers below
   if (el.closest("nav button")) { state.view = el.closest("nav button").dataset.view; state.folder = null; return render(); }
   if (el.closest("[data-sub]")) { e.preventDefault(); return goOps(el.closest("[data-sub]").dataset.sub); }
   if (el.closest("[data-goto]")) { state.view = el.closest("[data-goto]").dataset.goto; state.folder = null; return render(); }
@@ -275,6 +278,7 @@ function renderIngest() {
       ${card(d.not_ingested.length, "files on disk, not in the catalog", true)}
       ${card(d.unprocessed.length, "songs catalogued but not processed", true)}
       ${card(d.changed.length, "changed on disk since the last scan", true)}
+      ${d.inbox ? card(d.inbox.songs.length, `songs waiting in ${esc(d.inbox.folder)}/, hidden from Navidrome until Clean up`, true) : ""}
       ${card(d.downloading.length, "still downloading (.part)")}
       ${d.mixed ? card(d.mixed.length, "albums split across MusicBrainz editions", true) : ""}
     </div>
@@ -291,6 +295,8 @@ function renderIngest() {
     </div>
     <p class="muted" id="ingest-msg"></p>
     ${navidromeHtml()}
+    ${d.inbox ? `<p class="muted">New downloads belong in <code>${esc(d.inbox.folder)}/</code> in your library (point your downloader there).
+      Navidrome doesn't see that folder, so songs reach your phone only once Clean up has moved them, finished, into place.</p>` : ""}
     <h3>Not ingested (${notIn.length})</h3>
     <p class="muted">Audio files in your library folder that the catalog doesn't know yet. <b>Scan now</b> adds them.</p>
     ${notIn.length ? `<div class="tablewrap"><table><thead><tr><th>File</th><th class="num">Size</th></tr></thead><tbody>
@@ -334,6 +340,206 @@ document.addEventListener("click", e => {
   if (e.target.id === "ingest-cleanup") goOps("cleanup");
   if (e.target.id === "ingest-mb") goOps("scrape");
   if (e.target.id === "nd-sync") runJob("ingest", "/api/navidrome/sync", {});
+});
+
+// --- import / export tab ----------------------------------------------------------
+
+const xfer = { info: null, pickers: { import: { path: "", listing: null }, export: { path: "", listing: null } },
+               preview: null, move: true, selected: new Set(), filter: "", safe: true,
+               imp: { busy: false }, exp: { busy: false } };
+const joinPath = (a, b) => a.endsWith("/") ? a + b : a + "/" + b;
+
+async function renderTransfer() {
+  if (!xfer.info) {
+    $("#main").innerHTML = `<div class="empty">Loading…</div>`;
+    try {
+      const r = await fetch("/api/transfer");
+      if (!r.ok) throw new Error("This tab needs the updated server: restart it with .venv/bin/python app.py");
+      xfer.info = await r.json();
+    } catch (err) { return $("#main").innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+    const drive = xfer.info.places.find(p => p.drive);
+    await Promise.all([browseTo("import", xfer.info.places[0].path, false), browseTo("export", (drive || xfer.info.places[0]).path, false)]);
+  }
+  if (state.view !== "transfer") return;
+  const inbox = xfer.info.inbox, pv = xfer.preview;
+  const chosen = state.albums.filter(a => xfer.selected.has(a.folder)), size = chosen.reduce((n, a) => n + (a.size || 0), 0);
+  $("#main").innerHTML = `<div class="transfer">
+    <section id="imp">
+      <h2>Import</h2>
+      ${inbox ? `<p class="muted">Bring a folder of music into <code>${esc(inbox)}/</code>, where it stays out of Navidrome until it's processed. The folder comes along with its
+        structure, as <code>${esc(inbox)}/&lt;folder name&gt;/…</code>. Songs, lyrics, covers, cue sheets and rip logs come along; other files stay where they are.
+        Undo history can reverse an import: moved files go back where they came from.</p>
+      ${pickerHtml("import")}
+      <div class="actions"><button class="btn" id="imp-check">Check this folder</button></div>
+      ${pv ? `<div class="xfer-preview">
+        <p><b>${plural(pv.songs, "song")}</b>${pv.files > pv.songs ? ` and ${plural(pv.files - pv.songs, "other file")}` : ""}, ${bytes(pv.bytes)}, in ${plural(pv.folders.length, "folder")},
+          going to <code>${esc(pv.target)}/</code>.${pv.already_there ? ` ${plural(pv.already_there, "file")} already there will be left alone.` : ""}
+          ${pv.same_drive ? "" : " It's on another drive, so the files are copied across: that takes a while."}</p>
+        ${pv.folders.length ? `<ul class="mb-list">${pv.folders.slice(0, 12).map(f => `<li>${esc(f.folder === "." ? "(the folder itself)" : f.folder)}: ${plural(f.songs, "song")}</li>`).join("")}
+          ${pv.folders.length > 12 ? `<li class="muted">and ${pv.folders.length - 12} more</li>` : ""}</ul>` : ""}
+        <div class="actions">
+          <label><input type="radio" name="imp-mode" value="move" ${xfer.move ? "checked" : ""}> Move (the files leave the folder)</label>
+          <label><input type="radio" name="imp-mode" value="copy" ${xfer.move ? "" : "checked"}> Copy (the folder keeps them)</label>
+          <button class="btn primary" id="imp-run" ${pv.songs ? "" : "disabled"}>${xfer.move ? "Move" : "Copy"} ${plural(pv.songs, "song")} into ${esc(inbox)}/</button>
+        </div></div>` : ""}
+      <div class="progress" id="imp-progress" data-ops="import" hidden>
+        <div class="track" role="progressbar" aria-label="Import progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+        <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+      </div>
+      <p class="muted" id="imp-msg" role="status"></p>`
+      : `<p class="muted">There's no inbox to import into: set <code>MUSE_INBOX</code> in .env (see .env.example).</p>`}
+    </section>
+    <section id="exp">
+      <h2>Export</h2>
+      <p class="muted">Copy albums to another folder: a USB stick, or a folder to burn to a DVD. They keep the library's structure (Artist/Year - Album/…) with
+        their lyrics files and covers. The library isn't changed. Running an export again skips what's already copied, so an interrupted one picks up where it stopped.</p>
+      <div class="actions"><input type="search" id="exp-filter" placeholder="Find albums by name, artist or folder…" value="${esc(xfer.filter)}">
+        <button class="btn link" id="exp-all">Select all shown</button><button class="btn link" id="exp-none">Clear</button></div>
+      <div id="exp-list" class="exp-list">${exportListHtml()}</div>
+      <p><b>${plural(chosen.length, "album")}</b> selected, ${bytes(size)}.</p>
+      <h3>Copy to</h3>
+      ${pickerHtml("export")}
+      <div class="actions">
+        <label><input type="checkbox" id="exp-safe" ${xfer.safe ? "checked" : ""}> Make names safe for USB sticks, DVDs and Windows (replaces : ? * " and similar)</label>
+        <button class="btn primary" id="exp-run" ${chosen.length && xfer.pickers.export.listing?.writable ? "" : "disabled"}>Copy ${plural(chosen.length, "album")} (${bytes(size)})</button>
+        ${xfer.pickers.export.listing && !xfer.pickers.export.listing.writable ? `<span class="muted">Can't write to this folder.</span>` : ""}
+      </div>
+      <div class="progress" id="exp-progress" data-ops="export" hidden>
+        <div class="track" role="progressbar" aria-label="Export progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
+        <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
+      </div>
+      <p class="muted" id="exp-msg" role="status"></p>
+    </section></div>`;
+}
+
+function exportListHtml() {
+  const f = xfer.filter.toLowerCase();
+  const shown = state.albums.filter(a => a.folder && (!f || [a.albums, a.artist, a.folder].join(" ").toLowerCase().includes(f)));
+  xfer.shown = shown.map(a => a.folder);
+  return shown.length ? shown.slice(0, 400).map(a => `<label class="exp-row"><input type="checkbox" class="exp-pick" data-folder="${esc(a.folder)}" ${xfer.selected.has(a.folder) ? "checked" : ""}>
+      <span>${esc(a.albums || a.folder)} <span class="muted">· ${esc(a.artist || "")}${a.year ? " · " + a.year : ""} · ${bytes(a.size || 0)}</span></span></label>`).join("") +
+      (shown.length > 400 ? `<p class="muted">${shown.length - 400} more: search to narrow it down.</p>` : "")
+    : `<p class="muted">No album matches.</p>`;
+}
+
+// A folder picker for folders on this machine (the server's, since that's where the files are).
+function pickerHtml(id) {
+  const l = xfer.pickers[id].listing;
+  return `<div class="picker" data-picker="${id}">
+    <div class="actions"><input type="text" class="pick-path" value="${esc(xfer.pickers[id].path)}" spellcheck="false" aria-label="Folder">
+      <button class="btn" data-pick-go>Go</button></div>
+    ${l ? `<div class="places">${l.places.map(p => `<button class="btn link" data-pick-path="${esc(p.path)}">${p.drive ? "Drive: " : ""}${esc(p.name)}</button>`).join("")}</div>
+      <div class="folders">${l.parent ? `<button data-pick-path="${esc(l.parent)}">↑ Up</button>` : ""}
+        ${l.folders.map(f => `<button data-pick-path="${esc(joinPath(l.path, f))}">▸ ${esc(f)}</button>`).join("") || `<span class="muted">No folders in here.</span>`}</div>
+      ${l.songs_here ? `<p class="muted">${plural(l.songs_here, "song")} directly in this folder.</p>` : ""}` : ""}
+  </div>`;
+}
+
+async function browseTo(id, path, redraw = true) {
+  try {
+    const r = await fetch("/api/transfer/browse?" + new URLSearchParams({ path }));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    Object.assign(xfer.pickers[id], { path: d.path, listing: d });
+    if (id === "import") xfer.preview = null;
+  } catch (err) {
+    if (redraw) $(id === "import" ? "#imp-msg" : "#exp-msg").textContent = err.message;
+    return;
+  }
+  if (redraw) renderTransfer();
+}
+
+$("#main").addEventListener("click", async e => {
+  if (state.view !== "transfer") return;
+  const el = e.target, picker = el.closest("[data-picker]");
+  if (picker && el.closest("[data-pick-path]")) return browseTo(picker.dataset.picker, el.closest("[data-pick-path]").dataset.pickPath);
+  if (picker && el.matches("[data-pick-go]")) return browseTo(picker.dataset.picker, picker.querySelector(".pick-path").value.trim());
+  if (el.id === "imp-check" && !xfer.imp.busy) {
+    $("#imp-msg").textContent = "Reading the folder…";
+    try { xfer.preview = await post("/api/transfer/preview", { source: xfer.pickers.import.path }); renderTransfer(); }
+    catch (err) { xfer.preview = null; $("#imp-msg").textContent = err.message; }
+  }
+  if (el.id === "imp-run" && !xfer.imp.busy) {
+    const pv = xfer.preview;
+    if (!confirm(`${xfer.move ? "Move" : "Copy"} ${plural(pv.songs, "song")} (${bytes(pv.bytes)}) from ${pv.source} into ${pv.target}/? Undo history can reverse it.`)) return;
+    runJob("import", "/api/transfer/import", { source: pv.source, move: xfer.move });
+  }
+  if (el.id === "exp-all") { xfer.shown.forEach(f => xfer.selected.add(f)); renderTransfer(); }
+  if (el.id === "exp-none") { xfer.selected.clear(); renderTransfer(); }
+  if (el.id === "exp-run" && !xfer.exp.busy) {
+    const folders = [...xfer.selected], dest = xfer.pickers.export.path;
+    runJob("export", "/api/transfer/export", { folders, dest, safe: xfer.safe });
+  }
+});
+$("#main").addEventListener("change", e => {
+  if (state.view !== "transfer") return;
+  const el = e.target;
+  if (el.classList.contains("exp-pick")) { el.checked ? xfer.selected.add(el.dataset.folder) : xfer.selected.delete(el.dataset.folder); renderTransfer(); }
+  if (el.name === "imp-mode") { xfer.move = el.value === "move"; renderTransfer(); }
+  if (el.id === "exp-safe") xfer.safe = el.checked;
+});
+$("#main").addEventListener("input", e => {
+  if (state.view !== "transfer" || e.target.id !== "exp-filter") return;
+  xfer.filter = e.target.value;
+  $("#exp-list").innerHTML = exportListHtml();
+});
+$("#main").addEventListener("keydown", e => {
+  if (state.view === "transfer" && e.key === "Enter" && e.target.classList.contains("pick-path"))
+    browseTo(e.target.closest("[data-picker]").dataset.picker, e.target.value.trim());
+});
+
+// --- access navidrome tab ----------------------------------------------------------
+
+async function renderAccess() {
+  if (!state.access) $("#main").innerHTML = `<div class="empty">Looking up addresses…</div>`;
+  try {
+    const r = await fetch("/api/navidrome/access");
+    if (!r.ok) throw new Error("This tab needs the updated server: restart it with .venv/bin/python app.py");
+    state.access = await r.json();
+  } catch (err) { if (state.view === "navidrome") $("#main").innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
+  if (state.view !== "navidrome") return;
+  const a = state.access;
+  if (!a.configured) return $("#main").innerHTML = `<div class="access"><h2>Access Navidrome</h2><p class="muted">Navidrome isn't set up.
+    Add NAVIDROME_URL, NAVIDROME_USER and NAVIDROME_PASSWORD to .env; see documentation/navidrome-setup.md.</p></div>`;
+  const url = (u, note) => `<div class="url"><code>${esc(u)}</code><button class="btn" data-copy="${esc(u)}">Copy</button>
+    <a class="btn link" href="${esc(u)}" target="_blank" rel="noopener">Open ↗</a>${note || ""}</div>`;
+  const main = a.addresses.filter(x => !x.virtual), other = a.addresses.filter(x => x.virtual);
+  const answering = x => x.answering ? `<span class="badge ok">Answering</span>`
+    : `<span class="badge bad" title="Navidrome doesn't answer on this address: is Address = &quot;0.0.0.0&quot; in its config, and is it running?">Not answering</span>`;
+  $("#main").innerHTML = `<div class="access">
+    <h2>Access Navidrome</h2>
+    <div class="cards"><div class="card ${a.reachable ? "" : "attention"}"><b>${a.reachable ? "Running" : "Not answering"}</b>
+      <span>${a.reachable ? `Navidrome ${esc((a.version || "").split(" ")[0])}, port ${a.port}` : esc(a.error || "")}</span></div></div>
+    <h3>On your phone</h3>
+    <p class="muted">In a Subsonic app (Symfonium, substreamer, Tempo…) add a server with this address, or open it in the phone's browser.
+      The phone has to be on the same Wi-Fi as this ${a.local ? "computer" : "server"}.</p>
+    ${main.length ? main.map(x => url(x.url, answering(x) + (main.length > 1 && x.interface ? ` <span class="muted">${esc(x.interface)}</span>` : ""))).join("")
+      : `<p class="muted">This computer doesn't seem to be on a local network right now.</p>`}
+    <p class="muted">Sign in with your own Navidrome account${a.muse_user ? `, not “${esc(a.muse_user)}” (that one is Muse's)` : ""}.
+      If the address stops working, the router has probably given this computer a new one: this page always shows the current one.
+      Reserving the address in the router (a “DHCP reservation”) keeps it fixed.</p>
+    ${other.length ? `<details><summary class="muted">Other addresses on this computer (${other.length})</summary>
+      <p class="muted">Containers and virtual machines; phones can't use these.</p>${other.map(x => url(x.url, answering(x) + ` <span class="muted">${esc(x.interface || "")}</span>`)).join("")}</details>` : ""}
+    <h3>Admin pages${a.local ? " on this computer" : ""}</h3>
+    <p class="muted">Users, libraries, players and settings. Sign in with the Navidrome admin account.</p>
+    ${url(a.local_url)}
+  </div>`;
+}
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  try {
+    await navigator.clipboard.writeText(b.dataset.copy);
+  } catch {  // the clipboard needs https or localhost: select the address instead, for Ctrl+C
+    const range = document.createRange();
+    range.selectNodeContents(b.previousElementSibling);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    return;
+  }
+  b.textContent = "Copied";
+  setTimeout(() => { b.textContent = "Copy"; }, 1500);
 });
 
 // --- player ----------------------------------------------------------------------
@@ -753,7 +959,7 @@ $("#appearance").addEventListener("click", async e => {
 
 // --- operations tab: process steps and sub-tabs ------------------------------------
 
-const OPS_TABS = [["scrape", "Scrape Details"], ["cleanup", "Clean up"], ["merge", "Merge albums"], ["art", "Album art"], ["lyrics", "Lyrics"],
+const OPS_TABS = [["scrape", "Scrape Details"], ["art", "Album art"], ["lyrics", "Lyrics"], ["cleanup", "Clean up"], ["merge", "Merge albums"],
                   ["history", "Undo history"]];
 
 function goOps(tab) {
@@ -771,7 +977,7 @@ function dockPanels() {
 }
 
 function workflowHtml() {
-  const ing = state.ingest, waiting = ing ? ing.not_ingested.length : 0;
+  const ing = state.ingest, waiting = ing ? ing.not_ingested.length : 0, inbox = ing && ing.inbox;
   const step = (sub, title, text) => `<li><button ${sub === "ingest" ? 'data-goto="ingest"' : `data-sub="${sub}"`} class="${state.opsTab === sub ? "on" : ""}">
     <b>${title}</b><span>${text}</span></button></li>`;
   return `<section class="workflow" aria-labelledby="wf-title">
@@ -780,13 +986,15 @@ function workflowHtml() {
     <ol class="steps">
       ${step("ingest", "Scan", `Ingest → <i>Scan now</i> adds the new files to the catalog${waiting ? ` (${waiting} waiting)` : ""}. Let downloads (.part) finish first.`)}
       ${step("scrape", "Scrape Details", "Look the albums up on MusicBrainz and apply the matches: proper titles, artists, dates and IDs, missing songs flagged, editions kept together.")}
-      ${step("cleanup", "Clean up", "Keep the best copy of any duplicates, then fix tags and file names: files move into Artist/Year - Album.")}
       ${step("art", "Album art", "Give albums without a cover one: from the folder, the songs, the Cover Art Archive or your drive.")}
       ${step("lyrics", "Lyrics", "Fill in missing lyrics (synced where possible) and tidy lyrics files left behind.")}
+      ${step("cleanup", "Clean up", inbox ? `Keep the best copy of any duplicates, fix tags and file names, and move the songs out of ${esc(inbox.folder)}/ into Artist/Year - Album: this releases them to Navidrome.`
+        : "Keep the best copy of any duplicates, then fix tags and file names: files move into Artist/Year - Album.")}
     </ol>
-    <p class="why"><b>Why this order:</b> Scrape Details can rename an album or its artist, and Clean up builds folder names from those tags, so scraping first means
-      files move once, not twice (each move can make phone apps download a song again). Art and lyrics go last: they're found by the corrected names
-      and saved where the files end up. Navidrome picks every change up by itself; sync your phone app afterwards.</p>
+    <p class="why"><b>Why this order:</b> Scrape Details corrects album and artist names in the files, so art and lyrics are found by the right names,
+      and Clean up builds folder names from them. Clean up goes last, so each song moves once, already finished: its cover embedded and its lyrics file
+      alongside (lyrics files and folder covers move with it). Changing a song after phone apps have it can make them download it again.
+      ${inbox ? `Songs in ${esc(inbox.folder)}/ stay out of Navidrome until then.` : "Navidrome picks every change up by itself; sync your phone app afterwards."}</p>
     <p class="why"><b>An album still shows up as several?</b> <a href="#" data-sub="merge">Merge albums</a> joins them by hand.</p>
   </section>`;
 }
@@ -1363,10 +1571,11 @@ $("#mb").addEventListener("click", async e => {
 
 const UNITS = { apply: "songs", undo: "steps", scan: "files" };
 const JOB_NAMES = { apply: "cleanup", undo: "undo", scan: "scan", musicbrainz: "Scrape Details run", artwork: "artwork run",
-                    lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge" };
+                    lyrics: "lyrics run", navidrome: "Navidrome sync", housekeeping: "tidy-up", merge: "merge", import: "import", export: "export" };
 // Where each job is started from: the header indicator takes you there.
 const JOB_HOME = { apply: "cleanup", undo: "history", musicbrainz: "scrape", artwork: "art", lyrics: "lyrics", merge: "merge",
-                   housekeeping: "history", scan: "ingest", navidrome: "ingest" };
+                   housekeeping: "history", scan: "ingest", navidrome: "ingest", import: "transfer", export: "transfer" };
+const TOP_VIEWS = ["ingest", "transfer"];  // homes that are whole tabs rather than Operations sub-tabs
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // Each job request: which job it is, what to say while it runs, and how to sum up its result.
@@ -1405,6 +1614,12 @@ const JOB_TEXT = {
     done: r => `Saved ${r.stats.synced || 0} synced and ${r.stats.plain || 0} plain lyrics` + (r.stats.skipped ? ` (${r.stats.skipped} skipped: moved or already had them)` : "") + "." },
   "/api/lyrics/orphans": { op: "lyrics", label: "Tidying lyrics files…",
     done: r => `Done: ${r.stats.reattached || 0} reattached, ${r.stats.trashed || 0} moved to .muse-trash.` },
+  "/api/transfer/import": { op: "import", label: b => b.move ? "Moving the files into the inbox…" : "Copying the files into the inbox…",
+    done: r => `Imported ${plural(r.imported, "file")} (${bytes(r.bytes)}) into ${r.target}/` + (r.already_there ? `; ${r.already_there} were already there` : "") +
+      ". Next: Scrape Details, Album art and Lyrics, then Clean up releases them to Navidrome." },
+  "/api/transfer/export": { op: "export", label: "Copying…",
+    done: r => `Copied ${plural(r.copied, "file")} (${bytes(r.bytes)}) to ${r.dest}` + (r.already_there ? `; ${r.already_there} were already there` : "") +
+      `. ${bytes(r.free_after)} free there now.` },
   "/api/merge/apply": { op: "merge", label: "Merging…",
     done: r => `Merged: ${r.stats.retagged || 0} songs retagged, ${r.stats.moved || 0} moved.` +
       (r.warnings.length ? " Some songs share a track number: Clean up shows them as duplicates to compare." : "") },
@@ -1425,6 +1640,10 @@ const PANES = {
            reload: async () => { await loadLibrary(); await loadMerge(); } },
   history: { ops: ["undo", "housekeeping"], state: { busy: false }, buttons: "#house button", msg: "#house-msg",
              reload: async () => { await loadLibrary(); await loadHousekeeping(); if ($("#house")) $("#house").innerHTML = housekeepingHtml(); } },
+  import: { ops: ["import"], state: xfer.imp, buttons: "#imp button", msg: "#imp-msg",
+            reload: async () => { xfer.preview = null; await loadLibrary(); await browseTo("import", xfer.pickers.import.path, false); renderTransfer(); } },
+  export: { ops: ["export"], state: xfer.exp, buttons: "#exp button", msg: "#exp-msg",
+            reload: async () => { await browseTo("export", xfer.pickers.export.path, false); renderTransfer(); } },
   ingest: { ops: ["scan", "navidrome"], state: { busy: false }, buttons: "#run-scan, #nd-sync", msg: "#ingest-msg", reload: loadLibrary },
 };
 
@@ -1582,7 +1801,7 @@ document.addEventListener("click", e => {
 });
 $("#job-name").addEventListener("click", () => {
   const home = JOB_HOME[currentJob()?.op];
-  if (home === "ingest") { state.view = "ingest"; state.folder = null; render(); }
+  if (TOP_VIEWS.includes(home)) { state.view = home; state.folder = null; render(); }
   else if (home) goOps(home);
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollJobs(); });

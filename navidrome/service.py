@@ -5,9 +5,12 @@ Navidrome has rescanned. Songs are matched by real path when Navidrome reports i
 documentation/navidrome-setup.md), else by MusicBrainz recording id, else by album/disc/track/title.
 """
 import datetime
+import ipaddress
 import re
+import socket
 import subprocess
 import time
+from urllib.parse import urlparse
 
 import config
 import crud
@@ -31,6 +34,60 @@ def status():
     except NavidromeError as e:
         out["error"] = str(e)
     return out
+
+
+# Interfaces that aren't the machine's real network connection (containers, VMs, VPN bridges).
+VIRTUAL_INTERFACES = ("docker", "br-", "virbr", "veth", "podman", "cni", "lxc", "vmnet", "vboxnet")
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def lan_addresses():
+    """This machine's private IPv4 addresses: the one its traffic goes out on first, virtual interfaces last."""
+    found = {}
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True, timeout=5).stdout
+        for line in out.splitlines():
+            fields = line.split()
+            found[fields[3].split("/")[0]] = fields[1]
+    except (OSError, subprocess.SubprocessError, IndexError):
+        pass  # no `ip` (not Linux): the default route below still finds the main address
+    primary = None
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))  # UDP connect sends nothing: it only picks the outgoing interface
+            primary = s.getsockname()[0]
+            found.setdefault(primary, None)
+    except OSError:
+        pass
+    out = [{"ip": ip, "interface": iface, "primary": ip == primary,
+            "virtual": bool(iface and iface.startswith(VIRTUAL_INTERFACES))}
+           for ip, iface in found.items() if ipaddress.ip_address(ip).is_private]
+    return sorted(out, key=lambda a: (not a["primary"], a["virtual"], a["ip"]))
+
+
+def _answers(host, port):
+    try:
+        socket.create_connection((host, port), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def access():
+    """Where to reach Navidrome: from phones on the local network, and from this machine (the admin pages)."""
+    url = urlparse(config.NAVIDROME_URL or "http://127.0.0.1:4533")
+    scheme, port = url.scheme or "http", url.port or (443 if url.scheme == "https" else 4533)
+    if url.hostname in LOCAL_HOSTS:  # Navidrome runs here: phones use this machine's network address
+        addresses = lan_addresses()
+        local_url = f"{scheme}://localhost:{port}"
+    else:  # Navidrome runs elsewhere: its address is the one in NAVIDROME_URL
+        addresses = [{"ip": url.hostname, "interface": None, "primary": True, "virtual": False}]
+        local_url = config.NAVIDROME_PUBLIC_URL or config.NAVIDROME_URL
+    for a in addresses:
+        a["url"] = f"{scheme}://{a['ip']}:{port}"
+        a["answering"] = _answers(a["ip"], port)
+    return {**status(), "port": port, "local": url.hostname in LOCAL_HOSTS, "local_url": local_url,
+            "addresses": addresses, "muse_user": config.NAVIDROME_USER}
 
 
 def ensure_running(wait=20):

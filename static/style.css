@@ -31,7 +31,12 @@ nav button { background: none; border: 0; color: var(--muted); font: inherit; pa
 nav button.on { background: var(--chip); color: var(--ink); }
 input[type=search] { flex: 1; min-width: 200px; max-width: 420px; padding: 7px 10px; border: 1px solid var(--line);
   border-radius: 6px; background: var(--panel); color: var(--ink); font: inherit; }
-#stats { color: var(--muted); font-size: 12px; margin-left: auto; }
+#stats { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header #q { min-width: 140px; }
+nav { display: flex; flex-wrap: nowrap; }
+nav button { white-space: nowrap; }
+/* Narrower windows: the library totals give way, so the tabs, search and Appearance stay on one line. */
+@media (max-width: 1320px) { #stats { display: none; } #open-appearance { margin-left: auto; } }
 main { padding: 20px; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; }
@@ -99,6 +104,19 @@ table.colors input[type=color] { width: 54px; height: 32px; border: 1px solid va
 #job-name { padding: 2px 0; font-variant-numeric: tabular-nums; }
 #job .pstop { padding: 1px 10px; font-size: 12px; }
 #main .err { color: var(--danger); }
+.access { max-width: 760px; }
+.transfer { display: grid; gap: 28px; max-width: 900px; }
+.transfer section { border: 1px solid var(--line); border-radius: 10px; padding: 4px 18px 16px; background: var(--panel); }
+.transfer input[type=text], .transfer input[type=search] { flex: 1; min-width: 220px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink); font: inherit; }
+.picker .places { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.picker .folders { display: flex; flex-wrap: wrap; gap: 4px; max-height: 180px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
+.picker .folders button { background: var(--chip); border: 0; border-radius: 5px; padding: 4px 9px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+.picker .folders button:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.exp-list { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 8px 0; }
+.exp-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; cursor: pointer; }
+.access .url { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.access .url code { font-size: 17px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); user-select: all; }
 
 nav .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 nav .count:empty { display: none; }

@@ -17,6 +17,7 @@ Muse is a small Python web app with no web framework: `http.server` from the sta
 | `musicbrainz/` | Rate-limited MusicBrainz client, release matching, proposals, and alignment of mixed editions. |
 | `artwork/` | Cover candidates (folder, embedded, Cover Art Archive, iTunes, uploads), image checks and resizing, and embedding. |
 | `lyrics/` | Where a song's lyrics are (`.lrc`, `.txt`, embedded) and what kind, the LRCLIB client, saving lyrics files, orphaned `.lrc` files, and parsing synced lyrics for the player. |
+| `transfer/` | Import (a folder from anywhere on this machine into the inbox, journaled for undo) and export (album folders copied out, keeping the library's structure), plus the folder picker's listing. |
 | `navidrome/` | Subsonic API client (token auth, server side only), starting Navidrome if it's down, rescans, and linking songs to Navidrome ids. |
 
 ## Database
@@ -78,6 +79,6 @@ POST endpoints only accept `Content-Type: application/json`. That forces a CORS 
 
 ## Tests
 
-    .venv/bin/python -m unittest cleanup.test_rules cleanup.test_retention navidrome.test_service lyrics.test_files
+    .venv/bin/python -m unittest cleanup.test_rules cleanup.test_retention navidrome.test_service lyrics.test_files transfer.test_service
 
 The rule tests use real tag values (artists, titles, albums) to pin down the regex behaviour.

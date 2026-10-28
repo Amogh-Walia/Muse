@@ -9,6 +9,9 @@ A song is **processed** once it's in the catalog *and* at the location the clean
 - **Not ingested:** files on disk that aren't in the catalog. **Scan now** adds them.
 - **Not processed:** catalogued songs that aren't at their clean location yet. The cleanup processes them.
 - Downloads still in progress (`.part`), and catalogued files that have gone missing.
+- Songs waiting in the **inbox** (`MUSE_INBOX`, default `Inbox/` in the library).
+
+**The inbox** is where your downloader should save to. Muse creates it with an empty `.ndignore`, which Navidrome honours, so nothing in it reaches Navidrome or your phone. Everything else works on inbox songs as usual: scanning, Scrape Details, album art, lyrics. Clean up then moves each song to its clean place (`Artist/Year - Album/`); inbox songs are never at their clean place, so every one moves. That is the moment it appears in Navidrome, already finished. Lyrics files and the album folder's cover and other files move with it, and songs Clean up can't place yet (an unresolved name clash) stay in the inbox. Undo moves songs back into the inbox, out of Navidrome again.
 
 Processed flags are recomputed after every scan, cleanup, undo and MusicBrainz apply.
 
@@ -103,6 +106,26 @@ Suggestions come from three checks:
 - **Longer name, same artist:** one album's name starts with another's ("Delhi Belly" and "Delhi Belly: Original Motion Picture Soundtrack").
 
 The last check also catches real sequels and editions ("The Marshall Mathers LP 2"). **This is fine, ignore** stops a suggestion coming back. It applies to that exact set of albums, so a new album joining the group brings the suggestion back. Ignored suggestions are listed under the suggestions, each with **Suggest again**.
+
+## Import / Export
+
+**Import** brings a folder of music into the inbox in one go. Pick the folder with the folder picker, which shows mounted drives such as USB sticks, then **Check this folder** to see how many songs it holds and where they'll go.
+- **Where it lands:** `<inbox>/<folder name>/`, with the folder's own structure underneath.
+- **What comes along:** songs and the files that belong with them (lyrics, covers, cue sheets, rip logs, playlists). Anything else stays where it was.
+- **Move or copy:** moving takes the files out of the source (a quick rename on the same disk; on another disk they're copied, then removed). Copying leaves the source as it was.
+- **What's skipped:** files already in the inbox are left alone.
+- **Afterwards:** the import scans the new songs into the catalog. It's one entry in Undo history, which puts moved files back where they came from and removes copies.
+- **Stopping:** an import can be stopped; whatever was already brought in stays, and Continue carries on.
+- **Refused folders:** a folder inside the library, or one containing it.
+
+**Export** copies album folders out of the library: tick albums (search narrows the list), pick a destination folder, and copy.
+- **Structure:** albums keep the library's structure (`Artist/Year - Album/…`) with their lyrics files and covers.
+- **Safe names:** on by default, this replaces the characters FAT/exFAT USB sticks, DVDs and Windows reject (`: ? * " < > | \`), so `Delhi Belly: Soundtrack` becomes `Delhi Belly - Soundtrack`.
+- **Before copying:** free space is checked first. Files are copied under a temporary name and renamed when complete, so a stopped or failed export never leaves half files.
+- **Running it again** skips files already there with the same size, so it carries on an interrupted export or tops up a stick with newly added albums.
+- **The library isn't changed**, so exports aren't in Undo history. A destination inside the library is refused, since its copies would be catalogued as duplicates.
+
+Imports and exports can take a while. Like other jobs they carry on if you leave the page, and they don't stop when no page is watching (lookups do).
 
 ## Long-running jobs
 

@@ -13,6 +13,7 @@ import shutil
 import config
 import crud
 import scan
+import config
 from scan import AUDIO_EXTS, TRASH_DIR
 
 from . import tags
@@ -127,13 +128,14 @@ def _carry_leftovers(root, entries):
             dest[os.path.dirname(e["from"])].add(os.path.dirname(e["to"]))
     for old_dir, new_dirs in dest.items():
         full_old = os.path.join(root, old_dir)
-        if not old_dir or len(new_dirs) != 1 or not os.path.isdir(full_old) or _has_audio(full_old):
+        # the inbox itself isn't an album folder: what's loose in it stays (and so does its .ndignore)
+        if not old_dir or old_dir == config.INBOX or len(new_dirs) != 1 or not os.path.isdir(full_old) or _has_audio(full_old):
             continue
         new_dir = next(iter(new_dirs))
         for dirpath, _, names in os.walk(full_old):
             for name in names:
                 rel = os.path.relpath(os.path.join(dirpath, name), full_old)
-                if not name.endswith(".part") and not os.path.exists(os.path.join(root, new_dir, rel)):
+                if not name.endswith(".part") and name != ".ndignore" and not os.path.exists(os.path.join(root, new_dir, rel)):
                     _move(root, os.path.join(old_dir, rel), os.path.join(new_dir, rel), entries, "extra")
         for dirpath, _, _ in sorted(os.walk(full_old), reverse=True):
             _remove_empty_dirs(root, os.path.relpath(dirpath, root))
@@ -278,6 +280,12 @@ def undo(db_path, journal_path=None, progress=_no_progress):
                     with open(full, "w", encoding="utf-8") as f:
                         f.write(e["before"])
                 counts["files_restored"] += 1
+            elif e["op"] == "import":  # brought in by Import: moved back where it came from, or a copy removed
+                from transfer import service as transfer
+                transfer.undo_entry(root, e)
+                crud.tracks.delete(conn, e["path"])
+                _remove_empty_dirs(root, os.path.dirname(e["path"]))
+                counts["imports_undone"] += 1
             elif e["op"] == "created":  # a cover.jpg written next to the songs
                 if os.path.exists(os.path.join(root, e["path"])):
                     os.remove(os.path.join(root, e["path"]))

@@ -88,12 +88,15 @@ Restart Muse. In the background it checks Navidrome is running (starting the ser
 
 Muse signs Subsonic requests itself and proxies the audio, so the password and tokens never reach the browser. Songs play as-is, with seeking. ALAC (`.m4a`) and other formats browsers can't play are transcoded to MP3 320 by Navidrome.
 
-## 8. Phones and portable players
+## 8. Keep unfinished downloads out of Navidrome
+Muse keeps an `Inbox/` folder in your library (`MUSE_INBOX`) with a `.ndignore` in it, so Navidrome ignores whatever is there. Set your downloader's download folder to it (in Nicotine+: Settings → Downloads → download folder, e.g. `~/Music/<library>/Inbox`). Songs then reach Navidrome only when Clean up moves them into `Artist/Year - Album/`, with their tags, cover and lyrics already sorted, so phone apps never cache a half-finished version.
+
+## 9. Phones and portable players
 - Install a Subsonic client: **Symfonium** (paid, best offline caching) or **Tempo** (free, open source) on Android.
-- Add a server: `http://<this machine's address on your Wi-Fi>:4533` (e.g. `http://192.168.1.50:4533`) with your Navidrome user. `Address` must not be `127.0.0.1` for this, and the firewall must allow it (section 5).
+- Add a server: `http://<this machine's address on your Wi-Fi>:4533` (e.g. `http://192.168.1.50:4533`) with your Navidrome user. Muse's **Access Navidrome** tab shows the current address, checks Navidrome answers on it, and links the admin pages on this machine (`http://localhost:4533`). `Address` must not be `127.0.0.1` for this, and the firewall must allow it (section 5).
 - A fixed address helps: reserve this machine's IP in your router (DHCP reservation), so the apps keep finding it.
 - Streaming quality: **Original/Raw** on Wi-Fi, so a DAC gets the untouched FLAC.
 - Enable offline caching or downloads for albums you want away from home.
 
-## 9. Away from home
+## 10. Away from home
 Install **Tailscale** on the server and the device, then use the server's Tailscale address. Don't port-forward 4533 to the internet.

@@ -6,6 +6,10 @@
 
 - **Catalog:** every audio file (FLAC, MP3, M4A/ALAC, Ogg, Opus, WAV, …) with its full tags and audio properties, browsable by album and track, with cover art.
 - **Ingest:** see which files on disk aren't catalogued yet and which songs haven't been organized, and scan with one click.
+- **Inbox:** new downloads land in an inbox folder inside the library that Navidrome doesn't see, so songs reach your phone only once they're processed.
+- **Import / Export:**
+  - **Import** moves or copies a whole folder of music from anywhere on this machine (another disk, a USB stick) into the inbox, keeping its folder structure. Songs, lyrics, covers, cue sheets and rip logs come along, and Undo puts moved files back where they came from.
+  - **Export** copies the albums you pick to another folder, such as a USB stick or a folder to burn to a DVD. They keep the library's `Artist/Year - Album/` structure, lyrics files and covers. Names can be made safe for FAT/exFAT and Windows, free space is checked first, and running it again skips files already copied, so an interrupted export carries on.
 - **Cleanup:** regex rules give each song one main artist, move `feat.` credits out of titles, and strip decorative years and `[FLAC]`-style junk. Files are then renamed into `Artist/Year - Album/NN - Title.ext`. You preview every change per album and song before applying. Duplicate files are compared side by side (format, bit depth, sample rate, bitrate, art, lyrics) so you choose which to keep.
 - **Scrape Details:** finds the release on MusicBrainz behind each album, writes Picard-style tags and IDs, flags incomplete albums and lists their missing songs, and keeps albums assembled from several downloads on a single edition.
 - **Playback:** play songs and albums from the page. It streams through [Navidrome](https://www.navidrome.org/) when set up, which also serves Subsonic apps on phones and players, or straight from disk otherwise.
@@ -39,13 +43,17 @@ On first start Muse creates its SQLite database and scans the library. Later sca
 
 The **Operations** tab walks you through it, one sub-tab per step:
 
+Point your downloader at the **`Inbox/`** folder in your library. Navidrome doesn't see it (it holds a `.ndignore`), so new songs reach Navidrome and your phone only once they're finished.
+
 1. **Scan** (Ingest tab → *Scan now*): add new downloads to the catalog once they've finished downloading.
 2. **Scrape Details:** look the albums up on MusicBrainz and apply the matches.
-3. **Clean up:** keep the best copy of any duplicates, then fix tags and file names.
-4. **Album art:** add covers to albums without one.
-5. **Lyrics:** fill in missing lyrics and tidy leftover lyrics files.
+3. **Album art:** add covers to albums without one.
+4. **Lyrics:** fill in missing lyrics and tidy leftover lyrics files.
+5. **Clean up:** keep the best copy of any duplicates, fix tags and file names, and move the songs out of the inbox into `Artist/Year - Album/`. This releases them to Navidrome.
 
-Scrape Details comes before Clean up because it can rename albums and artists, and Clean up builds folder names from them, so files only move once. Every step previews its changes, and the **Undo history** sub-tab reverses them, newest first.
+Got a folder of music somewhere else, like another disk or a USB stick? **Import / Export → Import** brings it into the inbox in one go, ready for these steps.
+
+Scrape Details comes first because it corrects album and artist names, which art, lyrics and folder names are all based on. Clean up comes last, so each song moves once, already finished: its lyrics files and the album's cover file move with it. Every step previews its changes, and the **Undo history** sub-tab reverses them, newest first.
 
 ## Configuration
 
@@ -58,6 +66,7 @@ Settings are read from the environment, or from a `.env` file in the project fol
 | `MUSE_JOURNAL_DIR` | `data/journal` | Undo journals. |
 | `MUSE_ART_CACHE` | `data/artwork-cache` | Downloaded and uploaded cover images. |
 | `MUSE_UNDO_DAYS` | `30` | How long a change stays undoable. After that, its undo record and the duplicates it moved to `.muse-trash/` are deleted. `0` keeps everything. |
+| `MUSE_INBOX` | `Inbox` | Folder inside the library where downloads land, hidden from Navidrome until Clean up moves songs into place. Empty: no inbox. |
 | `MUSE_STOP_UNWATCHED` | `120` | Seconds after which a lookup (Scrape Details, artwork, lyrics) stops by itself if no Muse page is open, keeping what it found. `0`: never. |
 | `MUSE_HOST` | `127.0.0.1` | Address the web app listens on. |
 | `MUSE_PORT` | `8800` | Port the web app listens on. |

@@ -27,9 +27,11 @@ def upsert(conn, release):
 
 
 def summary(conn, release_id):
-    """Full stored details of a release, or None (releases applied before details were kept)."""
+    """Full stored details of a release, or None if they weren't kept: releases applied before details were
+    stored, or from a match found before they included every track ("tracks")."""
     row = conn.execute("SELECT summary FROM releases WHERE mb_release_id = ?", (release_id,)).fetchone()
-    return json.loads(row[0]) if row and row[0] else None
+    details = json.loads(row[0]) if row and row[0] else None
+    return details if details and "tracks" in details else None
 
 
 ALBUM_ID_KEYS = ("musicbrainz_albumid", "musicbrainz album id")
