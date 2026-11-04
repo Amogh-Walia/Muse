@@ -88,6 +88,10 @@ A song's existing front cover is replaced, even a broken one players ignore; oth
 
 Journal names carry microseconds, so two runs in the same second can't overwrite each other's journal.
 
+### Changing the artwork of several albums
+
+On the **Albums** page, **Select albums** turns the grid into a picker: click albums to tick them (or **Select all shown**, after a search), then **Change artwork…**. The chosen albums are marked for new artwork and open in Operations → **Album art**, listed first with a *Marked for new artwork* label, even though their songs already have pictures. There, search online or choose images as usual. Embedding a cover in a marked album replaces the art on every song and the folder's cover file, then removes the mark. **Unmark** takes an album off the list without changing it. Undo puts the old pictures back and marks the album again.
+
 ### Edit artwork (album page and song details)
 
 An album's page has **✎ Edit artwork**, and so does each song's details panel. It opens one dialog for that album folder.

@@ -334,6 +334,7 @@ def undo(db_path, journal_path=None, progress=_no_progress):
             conn.commit()
         if journal.get("kind") == "artwork":
             crud.artwork.forget(conn, journal.get("albums", []))
+            crud.artwork.want(conn, journal.get("wanted", []))  # still wanting new artwork, as before
         if journal.get("backup"):  # pictures kept for this undo: put back now, so no longer needed
             shutil.rmtree(os.path.join(JOURNAL_DIR, journal["backup"]), ignore_errors=True)
         os.rename(journal_path, journal_path[:-len(".json")] + ".undone.json")

@@ -70,14 +70,18 @@ def _strays(conn, by_album):
     linked = collections.defaultdict(set)  # release -> parts whose songs are linked to it
     for t_id, rid, folder, album_key in conn.execute("SELECT id, mb_album_id, folder, lower(album) FROM tracks WHERE mb_album_id IS NOT NULL"):
         linked[rid.lower()].add((folder, album_key))
+    # Title keys worked out once: comparing every missing song with every song in the library is millions of checks.
+    parts_named = collections.defaultdict(list)  # album name key -> parts with that name
+    for part in by_album:
+        parts_named[_title_key(part[1])].append(part)
+    song_keys = {part: [(_title_key(t["title"]), t["track_no"]) for t in songs] for part, songs in by_album.items()}
     for m in missing:
         homes = linked.get(m["mb_release_id"].lower(), set())
-        names = {_title_key(album_key) for _, album_key in homes}
-        for part, songs in by_album.items():
-            if part in homes or _title_key(part[1]) not in names:
-                continue
-            if any(_title_key(t["title"]) == _title_key(m["title"]) and t["track_no"] in (None, m["track_no"]) for t in songs):
-                out[sorted(homes)[0]].add(part)
+        title = _title_key(m["title"])
+        for name in {_title_key(album_key) for _, album_key in homes}:
+            for part in parts_named[name]:
+                if part not in homes and any(key == title and no in (None, m["track_no"]) for key, no in song_keys[part]):
+                    out[sorted(homes)[0]].add(part)
     return out
 
 

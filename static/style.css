@@ -43,6 +43,12 @@ main { padding: 20px; }
 .album { cursor: pointer; }
 .album .art { aspect-ratio: 1; background: var(--chip); border-radius: 6px; overflow: hidden; display: grid; place-items: center; color: var(--muted); font-size: 28px; }
 .album img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.albums-bar { display: flex; align-items: center; gap: 10px; margin: -6px 0 14px; min-height: 34px; }
+.album { position: relative; }
+.album .pick-mark { position: absolute; top: 8px; left: 8px; z-index: 1; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff;
+  background: rgba(0,0,0,.35); color: #fff; display: grid; place-items: center; font-size: 14px; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.album.picked .pick-mark { background: var(--accent); }
+.album.picked .art { outline: 3px solid var(--accent); outline-offset: 2px; }
 .artist-card .art { border-radius: 50%; }  /* artists round, albums square */
 .artist-head { display: flex; gap: 20px; align-items: center; margin: 4px 0 18px; }
 .artist-head h2 { margin: 0 0 8px; }

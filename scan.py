@@ -167,6 +167,28 @@ def partial_downloads(root):
     return out
 
 
+def forget_missing(root, db_path, progress=_no_progress):
+    """Take songs whose files are gone (deleted or moved outside Muse) out of the catalog, without a scan.
+    Nothing on disk changes, so there's nothing to undo: if the files come back, a scan adds them again."""
+    conn = crud.connect(db_path)
+    try:
+        paths = list(crud.tracks.file_index(conn))
+        gone = []
+        for i, rel in enumerate(paths):
+            if i % 200 == 0:
+                progress(i, len(paths), "Checking which files are still there…")
+            if not os.path.exists(os.path.join(root, rel)):
+                gone.append(rel)
+        for rel in gone:
+            crud.tracks.delete(conn, rel)  # its tags and lyrics go with it
+        crud.remake.forget_orphans(conn)
+        crud.releases.recompute(conn)  # an album missing those songs may now be incomplete
+        conn.commit()
+        return {"removed": len(gone), "paths": sorted(gone)}
+    finally:
+        conn.close()
+
+
 def scan(root, db_path, full=False, progress=_no_progress):
     """Bring the catalog in line with the disk. Returns counts of files found, probed, removed, failed."""
     root = os.path.abspath(root)
@@ -191,6 +213,7 @@ def scan(root, db_path, full=False, progress=_no_progress):
     gone = set(known) - found
     for rel in gone:
         crud.tracks.delete(conn, rel)
+    crud.remake.forget_orphans(conn)
 
     print(f"{len(found)} audio files, {len(todo)} to probe, {len(gone)} removed", file=sys.stderr)
     failed = 0

@@ -18,7 +18,7 @@
 - **Bollywood degreaser:** songs titled like `Pyaar Tenu Karda Gabru (From "Shubh Mangal Zyada Saavdhan")` go to the film's album they name (found on MusicBrainz by that film, and by ISRC). The "(From …)" then comes out of the title and file name, so it stops cluttering the library.
 - **Playback:** play songs and albums from the page. It streams through [Navidrome](https://www.navidrome.org/) when set up, which also serves Subsonic apps on phones and players, or straight from disk otherwise.
 - **Lyrics:** shows each song's lyrics status, fills gaps with synced lyrics from [LRCLIB](https://lrclib.net) saved as `.lrc` files, tidies orphaned lyrics files, and scrolls synced lyrics along with the player.
-- **Album art:** finds covers in album folders, in the songs themselves, on the Cover Art Archive and optionally iTunes, or takes an image from your drive, and embeds the one you pick. **✎ Edit artwork** on an album's page (or a song's details) changes the cover of the whole album or of chosen songs.
+- **Album art:** finds covers in album folders, in the songs themselves, on the Cover Art Archive and optionally iTunes, or takes an image from your drive, and embeds the one you pick. **✎ Edit artwork** on an album's page (or a song's details) changes the cover of the whole album or of chosen songs. Several albums at once: **Albums → Select albums → Change artwork…** sends them to Album art for new covers.
 - **Safe by design:**
   - Audio data is never rewritten.
   - Every operation is journaled, and one click undoes it.

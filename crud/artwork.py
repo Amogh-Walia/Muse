@@ -35,6 +35,19 @@ def forget(conn, album_keys):
     conn.executemany("DELETE FROM artwork WHERE album_key = ?", [(k,) for k in album_keys])
 
 
+def want(conn, folders):
+    """Mark album folders for new artwork: Album art lists them until they get it."""
+    conn.executemany("INSERT OR IGNORE INTO art_wanted VALUES (?, ?)", [(f, _now()) for f in folders])
+
+
+def unwant(conn, folders):
+    conn.executemany("DELETE FROM art_wanted WHERE folder = ?", [(f,) for f in folders])
+
+
+def wanted(conn):
+    return {r[0] for r in conn.execute("SELECT folder FROM art_wanted")}
+
+
 def applied(conn):
     return {r["album_key"]: dict(r) for r in conn.execute("SELECT * FROM artwork")}
 

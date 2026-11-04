@@ -26,6 +26,11 @@ def choose(conn, track_id, choice):
     conn.execute("UPDATE remake_songs SET chosen = ? WHERE track_id = ?", (choice, track_id))
 
 
+def forget_orphans(conn):
+    """Lookups of songs no longer in the catalog (their file was removed)."""
+    conn.execute("DELETE FROM remake_songs WHERE track_id NOT IN (SELECT id FROM tracks)")
+
+
 def forget(conn, track_ids):
     conn.executemany("DELETE FROM remake_songs WHERE track_id = ?", [(t,) for t in track_ids])
 

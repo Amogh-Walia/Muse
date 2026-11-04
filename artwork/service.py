@@ -32,24 +32,25 @@ def _groups(conn):
 
 
 def albums(conn, include_covered=False):
-    """Albums with songs lacking embedded art (all albums with include_covered), with their candidates."""
+    """Albums with songs lacking embedded art, or marked for new artwork (all albums with include_covered),
+    with their candidates. Marked ones come first."""
     candidates = collections.defaultdict(list)
     for c in crud.artwork.candidates(conn):
         candidates[c["album_key"]].append(c)
-    applied = crud.artwork.applied(conn)
+    applied, wanted = crud.artwork.applied(conn), crud.artwork.wanted(conn)
     out = []
     for key, songs in _groups(conn).items():
         lacking = [s for s in songs if not s["has_cover"]]
-        if not lacking and not include_covered:
+        if not lacking and not include_covered and songs[0]["folder"] not in wanted:
             continue
         album, artist = mb_service.album_facts(songs)
         out.append({
             "key": key, "folder": songs[0]["folder"], "album": album, "artist": artist,
             "songs": len(songs), "lacking": len(lacking),
             "cover_id": next((s["id"] for s in songs if s["has_cover"]), None),
-            "candidates": candidates.get(key, []), "applied": applied.get(key),
+            "candidates": candidates.get(key, []), "applied": applied.get(key), "wanted": songs[0]["folder"] in wanted,
         })
-    return sorted(out, key=lambda a: ((a["artist"] or "").lower(), (a["album"] or "").lower()))
+    return sorted(out, key=lambda a: (not a["wanted"], (a["artist"] or "").lower(), (a["album"] or "").lower()))
 
 
 def _store(conn, key, source, found):
@@ -122,7 +123,7 @@ class _Journal:
     def __init__(self):
         self.stamp = cleanup_apply.journal_stamp()
         self.backup_dir = f"{self.stamp}-artwork-backup"
-        self.entries, self.stats, self.albums = [], collections.Counter(), []
+        self.entries, self.stats, self.albums, self.wanted = [], collections.Counter(), [], []
 
     def keep(self, data):
         """Save bytes for undo; returns their name in the journal folder."""
@@ -140,7 +141,8 @@ class _Journal:
         os.makedirs(cleanup_apply.JOURNAL_DIR, exist_ok=True)
         path = os.path.join(cleanup_apply.JOURNAL_DIR, f"{self.stamp}-artwork.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"root": root, "created": self.stamp, "kind": "artwork", "albums": self.albums, "backup": self.backup_dir,
+            json.dump({"root": root, "created": self.stamp, "kind": "artwork", "albums": self.albums, "wanted": self.wanted,
+                       "backup": self.backup_dir,
                        "stats": self.stats, "entries": self.entries}, f, ensure_ascii=False, indent=1)
         return path
 
@@ -192,26 +194,33 @@ def _cover_file(root, folder, image, journal, replace):
 
 
 def apply(db_path, choices, replace=False, save_folder=True, progress=_no_progress):
-    """Embed the chosen cover ({album key: image sha}) into each album's songs that lack art (all, with replace)."""
+    """Embed the chosen cover ({album key: image sha}) into each album's songs that lack art (all, with replace).
+    Albums marked for new artwork get it on every song and in the folder's cover file, and lose the mark."""
     conn = crud.connect(db_path)
     root = crud.get_root(conn)
     groups = _groups(conn)
+    wanted = crud.artwork.wanted(conn)
     plan = []
     for key, sha in choices.items():
         cand = next((c for c in crud.artwork.candidates(conn, key) if c["sha"] == sha), None)
         if key not in groups or cand is None:
             raise ValueError("that image isn't a candidate for that album; look for artwork again")
-        targets = [s for s in groups[key] if replace or not s["has_cover"]]
-        plan.append((key, cand, targets))
-    total = sum(len(t) for _, _, t in plan)
+        renew = replace or groups[key][0]["folder"] in wanted
+        targets = [s for s in groups[key] if renew or not s["has_cover"]]
+        plan.append((key, cand, targets, renew))
+    total = sum(len(t) for _, _, t, _ in plan)
     journal, done = _Journal(), 0
     try:
-        for key, cand, targets in plan:
+        for key, cand, targets, renew in plan:
+            folder = groups[key][0]["folder"]
             image = images.for_embedding(images.load(cand["sha"]))
-            done = _embed_songs(conn, root, targets, image, replace, journal, progress, done, total)
-            if save_folder:
-                _cover_file(root, groups[key][0]["folder"], image, journal, replace=False)
-            crud.artwork.record(conn, key, groups[key][0]["folder"], groups[key][0]["album"], cand, len(targets))
+            done = _embed_songs(conn, root, targets, image, renew, journal, progress, done, total)
+            if save_folder or folder in wanted:  # a new look replaces the folder's cover file too
+                _cover_file(root, folder, image, journal, replace=folder in wanted)
+            crud.artwork.record(conn, key, folder, groups[key][0]["album"], cand, len(targets))
+            if folder in wanted:
+                crud.artwork.unwant(conn, [folder])
+                journal.wanted.append(folder)
             journal.albums.append(key)
             conn.commit()
             journal.stats["albums"] += 1

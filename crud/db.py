@@ -155,6 +155,11 @@ CREATE TABLE IF NOT EXISTS remake_releases (
     summary    TEXT,
     fetched_at TEXT
 );
+-- Album folders marked for new artwork (Albums page → Select albums → Change artwork), until they get it
+CREATE TABLE IF NOT EXISTS art_wanted (
+    folder   TEXT PRIMARY KEY,
+    added_at TEXT
+);
 -- Merge suggestions marked "this is fine" (signature: the album keys, sorted, joined by \x01)
 CREATE TABLE IF NOT EXISTS merge_ignored (
     signature  TEXT PRIMARY KEY,

@@ -192,6 +192,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, artists.state(conn, crud.get_root(conn), body.get("name") or ""))
                 finally:
                     conn.close()
+            if self.path == "/api/art/want":  # mark (or, with "remove", unmark) album folders for new artwork
+                conn = crud.connect(self.db_path)
+                try:
+                    folders = [f for f in body.get("folders") or [] if f]
+                    (crud.artwork.unwant if body.get("remove") else crud.artwork.want)(conn, folders)
+                    conn.commit()
+                    return self.send(200, {"folders": len(folders)})
+                finally:
+                    conn.close()
             if self.path == "/api/art/folder":  # an album folder's artwork for Edit artwork (local images only)
                 from artwork import service as art_service
                 conn = crud.connect(self.db_path)
@@ -223,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
                      "/api/housekeeping/prune": self.prune, "/api/navidrome/sync": self.navidrome_sync,
                      "/api/lyrics/find": self.lyrics_find, "/api/lyrics/apply": self.lyrics_apply,
                      "/api/lyrics/orphans": self.lyrics_orphans, "/api/merge/apply": self.merge_apply,
-                     "/api/art/set": self.art_set, "/api/artists/picture/find": self.artist_picture_find,
+                     "/api/catalog/forget-missing": self.forget_missing, "/api/art/set": self.art_set, "/api/artists/picture/find": self.artist_picture_find,
                      "/api/artists/picture/set": self.artist_picture_set, "/api/singles": self.make_singles, "/api/remake/lookup": self.remake_lookup, "/api/remake/apply": self.remake_apply,
                      "/api/degrease/lookup": self.degrease_lookup, "/api/degrease/apply": self.degrease_apply,
                      "/api/transfer/import": self.transfer_import, "/api/transfer/export": self.transfer_export,
@@ -656,6 +665,12 @@ class Handler(BaseHTTPRequestHandler):
                             for t in crud.tracks.unprocessed(conn)],
             "mixed": crud.releases.mixed_albums(conn),
         }
+
+    def forget_missing(self, body):
+        progress = report_progress("scan")
+        result = scan.forget_missing(self.root(), self.db_path, progress=progress)
+        self.refresh_status(progress)
+        return result
 
     def run_scan(self, body):
         progress = report_progress("scan")

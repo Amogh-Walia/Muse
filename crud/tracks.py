@@ -80,7 +80,17 @@ def search(conn, q=None, folder=None, sort=None, direction="asc"):
 
 def albums(conn):
     """One row per folder, with the best track to take cover art from and MusicBrainz completeness."""
+    # Editions and completeness are worked out once per folder up front: as correlated subqueries
+    # they rescanned the whole tracks table for every folder.
     rows = conn.execute("""
+        WITH editions AS (
+               SELECT t.folder, count(DISTINCT g.value) n FROM tracks t JOIN tags g ON g.track_id = t.id
+               WHERE lower(g.key) IN ('musicbrainz_albumid', 'musicbrainz album id')
+               AND g.value LIKE '________-____-____-____-____________' GROUP BY t.folder),
+             completeness AS (
+               SELECT f.folder, min(r.complete) complete, sum(r.missing_count) missing
+               FROM (SELECT DISTINCT folder, mb_album_id FROM tracks) f JOIN releases r ON r.mb_release_id = f.mb_album_id
+               GROUP BY f.folder)
         SELECT t.folder,
                coalesce(min(CASE WHEN t.has_cover THEN t.id END), min(t.id)) cover_id,
                group_concat(DISTINCT t.album) albums,
@@ -94,15 +104,13 @@ def albums(conn):
                max(t.sample_rate) sample_rate,
                max(t.navidrome_album_id) navidrome_album_id,
                sum(t.processed) processed,
-               (SELECT count(DISTINCT g.value) FROM tracks t2 JOIN tags g ON g.track_id = t2.id
-                    WHERE t2.folder = t.folder AND lower(g.key) IN ('musicbrainz_albumid', 'musicbrainz album id')
-                    AND g.value LIKE '________-____-____-____-____________') editions,
-               (SELECT min(complete) FROM releases WHERE mb_release_id IN
-                    (SELECT mb_album_id FROM tracks t2 WHERE t2.folder = t.folder)) complete,
-               (SELECT sum(missing_count) FROM releases WHERE mb_release_id IN
-                    (SELECT mb_album_id FROM tracks t2 WHERE t2.folder = t.folder)) missing
+               coalesce(max(e.n), 0) editions,
+               max(c.complete) complete,
+               max(c.missing) missing
         FROM tracks t
-        GROUP BY t.folder ORDER BY lower(artist), year, t.folder""")
+        LEFT JOIN editions e ON e.folder = t.folder
+        LEFT JOIN completeness c ON c.folder = t.folder
+        GROUP BY t.folder ORDER BY lower(coalesce(max(t.album_artist), max(t.artist))), year, t.folder""")
     return [dict(r) for r in rows]
 
 

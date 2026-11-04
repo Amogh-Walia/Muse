@@ -154,7 +154,8 @@ const keyFrom = v => decodeURIComponent(v);
 // Cover images are cached by the browser; the version changes after artwork is edited, so pages show the new one.
 const coverUrl = (id, embeddedOnly) => `/cover/${id}?v=${state.artVersion}${embeddedOnly ? "&embedded=1" : ""}`;
 
-const state = { view: "albums", q: "", folder: null, sort: null, dir: "asc", albums: [], opsTab: "scrape", artVersion: Date.now() };
+const state = { view: "albums", q: "", folder: null, sort: null, dir: "asc", albums: [], opsTab: "scrape", artVersion: Date.now(),
+                selecting: false, sel: new Set() };
 try { state.opsTab = localStorage.getItem("muse.opsTab") || state.opsTab; } catch {}  // remember the last sub-tab
 
 const COLS = [
@@ -178,7 +179,8 @@ const KIND_LABEL = { single: "Single", ep: "EP" };
 
 // One album tile (Albums grid and artist pages). Clicking it opens the album.
 const albumCard = a => `
-    <div class="album" data-folder="${esc(a.folder)}" title="${esc(a.folder)}">
+    <div class="album ${state.selecting && state.sel.has(a.folder) ? "picked" : ""}" data-folder="${esc(a.folder)}" title="${esc(a.folder)}">
+      ${state.selecting && state.view === "albums" ? `<span class="pick-mark" aria-hidden="true">${state.sel.has(a.folder) ? "✓" : ""}</span>` : ""}
       <div class="art"><img loading="lazy" src="${coverUrl(a.cover_id)}" onerror="this.replaceWith('♪')"></div>
       <div class="t">${a.folder === "" ? "Loose files (library root)" : esc(a.albums)}</div>
       <div class="s">${esc(a.artist || "Unknown artist")}${a.year ? " · " + a.year : ""}</div>
@@ -192,7 +194,16 @@ const albumCard = a => `
 function renderAlbums() {
   const q = state.q.toLowerCase();
   const list = state.albums.filter(a => !q || [a.folder, a.albums, a.artist, a.year].join(" ").toLowerCase().includes(q));
-  $("#main").innerHTML = list.length ? `<div class="grid">${list.map(albumCard).join("")}</div>` : `<div class="empty">No albums match.</div>`;
+  state.shownFolders = list.map(a => a.folder).filter(Boolean);  // loose files at the library root aren't an album
+  const n = state.sel.size;
+  // Select albums: tick tiles, then send them to Album art for new covers (they stay listed there until they get one)
+  const bar = state.selecting ? `<div class="albums-bar"><b>${plural(n, "album")} selected</b>
+      <button class="btn link" id="sel-all">Select all shown</button><button class="btn link" id="sel-none">Clear</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="sel-art" ${n ? "" : "disabled"}>Change artwork…</button>
+      <button class="btn" id="sel-done">Done</button></div>`
+    : `<div class="albums-bar"><span class="spacer"></span><button class="btn" id="sel-start">Select albums</button></div>`;
+  $("#main").innerHTML = bar + (list.length ? `<div class="grid">${list.map(albumCard).join("")}</div>` : `<div class="empty">No albums match.</div>`);
 }
 
 // --- artists tab ---------------------------------------------------------------------
@@ -324,6 +335,7 @@ document.addEventListener("click", e => {
   if (state.view === "transfer" && el.closest("#main")) return;  // its own handlers below
   if (el.closest("nav button")) {
     state.view = el.closest("nav button").dataset.view; state.folder = null; state.artist = null; state.backTo = null;
+    state.selecting = false; state.sel.clear();
     return render();
   }
   if (el.closest("[data-sub]")) { e.preventDefault(); return goOps(el.closest("[data-sub]").dataset.sub); }
@@ -340,6 +352,16 @@ document.addEventListener("click", e => {
   if (el.id === "ap-save" && !ap.busy && ap.sha) {
     if (!confirm(`Use this picture for ${state.artist}? It's saved as artist.jpg in their folder; Undo history can put back the old one.`)) return;
     return runJob("artistpic", "/api/artists/picture/set", { name: state.artist, sha: ap.sha });
+  }
+  if (el.id === "sel-start") { state.selecting = true; state.sel.clear(); return render(); }
+  if (el.id === "sel-done") { state.selecting = false; state.sel.clear(); return render(); }
+  if (el.id === "sel-all") { state.shownFolders.forEach(f => state.sel.add(f)); return render(); }
+  if (el.id === "sel-none") { state.sel.clear(); return render(); }
+  if (el.id === "sel-art") return markForArtwork([...state.sel]);
+  if (el.closest(".album") && state.selecting && state.view === "albums" && state.folder === null) {
+    const f = el.closest(".album").dataset.folder;
+    if (f) state.sel.has(f) ? state.sel.delete(f) : state.sel.add(f);
+    return render();
   }
   if (el.closest(".album")) {
     if (state.view === "artists") { state.backTo = { artist: state.artist }; state.view = "albums"; }
@@ -450,7 +472,9 @@ function renderIngest() {
       <ul class="mb-list">${d.mixed.map(m => `<li>${esc(m.album || m.folder)}: ${m.editions.map(e => `${e.count} song${e.count === 1 ? "" : "s"} ${!e.id ? "with no MusicBrainz data, filed apart" : "on " + (e.title ? esc(e.title) + (e.date ? " (" + esc(e.date) + ")" : "") : "another edition")}`).join(", ")}</li>`).join("")}</ul>
       <p><button class="btn" id="ingest-mb">Open Scrape Details</button></p>` : ""}
     ${d.downloading.length ? `<h3>Downloading (${d.downloading.length})</h3><ul class="mb-list">${d.downloading.map(p => `<li class="path">${esc(p)}</li>`).join("")}</ul>` : ""}
-    ${d.gone.length ? `<h3>Gone (${d.gone.length})</h3><p class="muted">Catalogued, but the file is no longer there. A scan removes them.</p>
+    ${d.gone.length ? `<h3>Gone (${d.gone.length})</h3><p class="muted">Catalogued, but the file is no longer there (deleted, or moved outside Muse).
+      <button class="btn" id="forget-missing">Remove ${d.gone.length === 1 ? "it" : "them"} from the catalog</button>
+      Only the catalog changes; if the files come back, a scan adds them again.</p>
       <ul class="mb-list">${d.gone.map(p => `<li class="path">${esc(p)}</li>`).join("")}</ul>` : ""}
   </div>`;
 }
@@ -476,6 +500,7 @@ document.addEventListener("click", e => {
   if (e.target.id === "ingest-cleanup") goOps("cleanup");
   if (e.target.id === "ingest-mb") goOps("scrape");
   if (e.target.id === "nd-sync") runJob("ingest", "/api/navidrome/sync", {});
+  if (e.target.id === "forget-missing" && !PANES.ingest.state.busy) runJob("ingest", "/api/catalog/forget-missing", {});
 });
 
 // --- import / export tab ----------------------------------------------------------
@@ -1485,7 +1510,7 @@ function renderArtPane() {
       <div class="track" role="progressbar" aria-label="Artwork progress" aria-valuemin="0" aria-valuemax="100"><div class="bar"></div></div>
       <div class="ptext"><span class="pcount">Working…</span><span class="pdetail"></span></div>
     </div>
-    <p class="muted" id="art-msg" role="status"></p>
+    <p class="muted" id="art-msg" role="status">${esc(takeMarkedMsg())}</p>
     ${list.length ? list.map(albumArtRow).join("") : `<div class="empty">${art.albums.length ? "No albums match the search." : "Every song has embedded artwork."}</div>`}
     ${art.albums.length ? `<div class="applybar">
       <label><input type="checkbox" id="art-save" checked> Also save it as cover.jpg in the album folder (if there's none)</label>
@@ -1513,7 +1538,7 @@ function albumArtRow(a) {
     <div class="art-now">${a.cover_id ? `<img loading="lazy" src="${coverUrl(a.cover_id)}" alt="Current cover">` : "No artwork"}</div>
     <div>
       <div class="t">${esc(a.album || "Unknown album")}</div>
-      <div class="s">${esc(a.artist || "")} · ${a.lacking ? `${a.lacking} of ${a.songs} songs without art` : `all ${a.songs} songs have art`}
+      <div class="s">${a.wanted ? `<span class="badge warn">Marked for new artwork</span> <button class="btn link art-unwant" data-folder="${esc(a.folder)}">Unmark</button> · ` : ""}${esc(a.artist || "")} · ${a.lacking ? `${a.lacking} of ${a.songs} songs without art` : `all ${a.songs} songs have art`}
         ${a.applied ? ` · embedded from ${esc(a.applied.source)} on ${esc(a.applied.applied_at.slice(0, 10))}` : ""}</div>
       <div class="cands">
         <label class="cand none"><input type="radio" name="art-${i}" value="" ${chosen === "" ? "checked" : ""}>
@@ -1545,6 +1570,24 @@ async function uploadImage(key, file) {
     reader.readAsDataURL(file);
   });
   return post("/api/art/upload", { key, name: file.name, data });
+}
+
+// The note left by "Change artwork…" for the Album art tab: shown once.
+function takeMarkedMsg() {
+  const msg = art.markedMsg || "";
+  art.markedMsg = "";
+  return msg;
+}
+
+// Send albums to Album art for new covers: they're listed there (first) until they get one.
+async function markForArtwork(folders) {
+  try { await post("/api/art/want", { folders }); }
+  catch (err) { return alert(err.message); }
+  state.selecting = false; state.sel.clear();
+  art.albums = null;  // reload with the marked albums
+  art.markedMsg = `${plural(folders.length, "album")} marked for new artwork, listed first. Search online or choose images, pick one per album, then embed: ` +
+    "every song and the folder's cover file get it.";
+  goOps("art");
 }
 
 async function uploadArt(i, file) {
@@ -1687,6 +1730,10 @@ $("#main").addEventListener("change", e => {
 
 $("#main").addEventListener("click", async e => {
   if (state.view !== "operations" || art.busy) return;
+  if (e.target.classList.contains("art-unwant")) {
+    await post("/api/art/want", { folders: [e.target.dataset.folder], remove: true });
+    return loadArt();
+  }
   if (e.target.id === "art-find")
     runJob("art", "/api/art/find", { online: $("#art-online").checked, itunes: $("#art-itunes").checked, all: art.all });
   if (e.target.id === "art-apply") {
@@ -2133,6 +2180,9 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const JOB_TEXT = {
   "/api/scan": { op: "scan", label: "Scanning…",
     done: r => `Scan finished: ${r.found} audio files, ${r.probed} read, ${r.removed} removed` + (r.failed ? `, ${r.failed} unreadable` : "") + "." },
+  "/api/catalog/forget-missing": { op: "scan", label: "Removing songs whose files are gone…",
+    done: r => r.removed ? `Removed ${plural(r.removed, "song")} from the catalog: ${r.paths.slice(0, 3).join(", ")}${r.removed > 3 ? "…" : ""}.`
+      : "Nothing to remove: every catalogued file is still there." },
   "/api/navidrome/sync": { op: "navidrome", label: "Syncing with Navidrome…",
     done: r => `Navidrome ${r.navidrome}: ${r.linked} of ${r.songs_in_library} songs linked` +
       (r.navidrome_only ? `, ${r.navidrome_only} Navidrome songs not in the catalog` : "") + "." },
@@ -2237,7 +2287,7 @@ const PANES = {
             reload: async () => { xfer.preview = null; await loadLibrary(); await browseTo("import", xfer.pickers.import.path, false); renderTransfer(); } },
   export: { ops: ["export"], state: xfer.exp, buttons: "#exp button", msg: "#exp-msg",
             reload: async () => { await browseTo("export", xfer.pickers.export.path, false); renderTransfer(); } },
-  ingest: { ops: ["scan", "navidrome"], state: { busy: false }, buttons: "#run-scan, #nd-sync", msg: "#ingest-msg", reload: loadLibrary },
+  ingest: { ops: ["scan", "navidrome"], state: { busy: false }, buttons: "#run-scan, #nd-sync, #forget-missing", msg: "#ingest-msg", reload: loadLibrary },
 };
 
 const jobs = { p: null, local: null, seen: new Set(), timer: null, gen: 0, waiters: [], shown: undefined };
